@@ -1,47 +1,10 @@
-% feature_tracker.m
+% r2b2.m
 % Author: Max Fisher
 
-% Initial implementation of a simplified real-time beat tracker, which
-% relies on a single audio feature, with the goal of integrating it into
-% the Beaker ensemble learning framework [1].
-% We use the Log Filtered Spectral Flux onset detection as proposed in [2],
-% which takes ideas from [4] as well as other papers,
-% and follow the general method outlined in [3] for tempo estimation.
-
-% [1] Daniels, M. (2015).
-% An Ensemble Framework for Real-Time Audio Beat Tracking.
-% PhD dissertation, University of California, San Diego.
-
-% [2] Böck, S. Krebs, F. Schedl, M. (2012).
-% Evaluating the Online Capabilities of Onset Detection Methods.
-% Published by the International Society of Music Information Retrieval
-% (ISMIR), 2012.
-
-% [3] Percival, G. Tzanetakis, G. (2014).
-% Streamlined Tempo Estimation Based on Autocorrelation and Cross-Correlation
-% With Pulses.
-% IEEE/ACM Transactions on Audio, Speech and Language Processing,
-% Vol. 22, No. 12, December 2014
-
-% [4] Klapuri A., Eronen A., Astola, J. (2006).
-% Analysis of the Metre of Acoustic Musical Signals.
-% IEEE Transactions on Audio, Speech and Language Processing,
-% Vol. 14, No. 1, January 2006
-
-% Problems: ACF is like comb filtering with sine waves - fast but they're
-% too 'blunt' to be useful -> need more spiky functions. (i.e. custom comb)
-% DFT evaluates all frequencies equally spaced -> doesn't affect how
-% hearing works. We need to have more information at lower frequencies
-% -> constant-Q transform, or ERB bands. 
-
-% For now; just sum up DFT Bins logarithmically.
-
-
+function r2b2(audio_file, output_directory)
 %%%%%%%%%%%%%%%
-%% (independently) tweakable parametersuntitled
+%% (independently) tweakable parameters
 %%%%%%%%%%%%%%%
-WAV_NAME = 'walking-short';
-WAV_EXT = '.wav';
 
 % window parameters, in samples
 % approximate time of audio to use for windowing.
@@ -66,7 +29,7 @@ FEATURE_TIME_APPROX = 5; %seconds
 
 FEATURE_WIN_OVERLAP_PERCENT = 87.5;
 
-% or maybe use a window that weights recent samples more than older (by a few seconds) samples 
+% or maybe use a window that weights recent samples more than older (by a few seconds) samples
 FEATURE_WIN_TYPE = 'Rect';
 
 % how many bands to use for periodicity analysis
@@ -96,7 +59,7 @@ BEAT_DATA_OUTPUT_SUFFIX = '-beat-data';
 
 % assume mono audio wav file in current dir.
 
-[y, Fs] = audioread(strcat('./', WAV_NAME, WAV_EXT));
+[y, Fs] = audioread(strcat('./', audio_file));
 
 AUDIO_WIN_LENGTH = 2^round(log2(Fs*AUDIO_WIN_TIME_APPROX));
 AUDIO_WIN_TIME = AUDIO_WIN_LENGTH/Fs;
@@ -557,7 +520,7 @@ tic;
 % export data in the following format
 % one file per feature channel
 for c = 1:NUM_FEATURE_CHANNELS;
-    filename_for_channel = strcat('./', WAV_NAME, BEAT_DATA_OUTPUT_SUFFIX, ...
+    filename_for_channel = strcat(output_directory, '/', 'r2b2', BEAT_DATA_OUTPUT_SUFFIX, ...
         sprintf('-channel-%d.txt', c));
     outfile = fopen(filename_for_channel, 'w+');
 
@@ -595,4 +558,5 @@ end;
 time = toc;
 fprintf('spent %f s writing beat data\n', time);
 
+end
 % vim: tabstop=4 expandtab
