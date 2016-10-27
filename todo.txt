@@ -1,0 +1,8 @@
+
+Clean up initialisation into constructors
+improve plotting in tpe_autocorrelation
+investigate other autocorrelation methods: yin, sliding back across older feature data,
+implement klapuri's comb filters? -> change feature win time to 3s
+add prediction layer
+implement prediction layer using Viterbi Algorithm
+implement other onset detection functions
