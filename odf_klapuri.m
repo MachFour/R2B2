@@ -59,8 +59,8 @@ methods
 	end
 
 	% set up feature specific parameters
-	function initialise(this, name, audio_data, audio_sample_rate)
-		initialise@feature_extractor(this, name, audio_data, audio_sample_rate);
+	function initialise(this, audio_data, audio_sample_rate, name)
+		initialise@feature_extractor(this, audio_data, audio_sample_rate, name);
 
 		% in units of pi/2 radians per sample
 		LP_cutoff_freq_normalised = this.LP_CUTOFF_FREQ/(this.feature_sample_rate/2);
@@ -88,8 +88,8 @@ methods
 		for k = 1:this.num_audio_frames
 			curr_frame = this.get_windowed_audio_frame(k);
 
-			mean = sum(curr_frame)/length(curr_frame);
-			variance = sum(curr_frame.^2)/(length(curr_frame) - 1);
+			%mean = sum(curr_frame)/length(curr_frame);
+			%variance = sum(curr_frame.^2)/(length(curr_frame) - 1);
 			% normalise to mean 0 variance 1
 			% does doing this introduce noise?
             % since successive frames would have different means and variances...

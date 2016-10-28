@@ -20,6 +20,12 @@ end
 properties
 	autocorrelation_data;
 
+	% intermediate storage of tempo estimates
+	% this is a cell array in the same format as tempo_phase_estimates
+	% but each element of this cell array is a list of tuples of the form
+	% (tempo, tempo_confidence)
+	tempo_estimates;
+
 	% store a measure of the tempo strength, for each candidate tempo,
 	% as an alternative to peak picking of the raw autocorrelation function.
 	tempo_strength_data;
@@ -27,8 +33,8 @@ end
 
 
 methods
-	function initialise(this, estimator_name, feature_data, feature_sample_rate)
-		initialise@tempo_phase_estimator(this, estimator_name, feature_data, feature_sample_rate);
+	function initialise(this, feature_data, feature_sample_rate, estimator_name)
+		initialise@tempo_phase_estimator(this, feature_data, feature_sample_rate, estimator_name);
 		% there needs to be a margin between 4*feature_win_time and max_lag,
 		% since at the end of the unbiased autocorrelation function, the amplitude goes
 		% up artificially. When using 4 equally spaced impulses at a given lag
@@ -47,15 +53,8 @@ methods
 		this.autocorrelation_data = zeros(this.num_feature_frames, this.feature_win_length);
 		% initialise tempo and phase estimate array
 		for k = 1:this.num_feature_frames
-			% each row stores a different tempo/phase estimates,
-			% which is a tuple of the form
-			% (tempo_estimate, tempo_confidence, phase estimate, phase confidence)
-			% the first and third values are in samples, and must be multiplied by the feature
-			% rate in order to get a value in seconds.
-			% the second and fourth values are unitless real numbers
-			this.tempo_phase_estimates{k} = zeros(this.MAX_TEMPO_PEAKS*this.MAX_PHASE_PEAKS, 4);
-		end
 
+		end
 
 	end
 
@@ -68,6 +67,13 @@ methods
 		end
 
 	function compute_tempo_phase_estimates(this)
+		this.compute_tempo_estimates
+		this.compute_phase_estimates
+	end
+
+	% Performs an autocorrelation to detect the most likely periodicities in each frame,
+	% and stores them in the intermediate cell array, tempo_estimates
+	function compute_tempo_estimates(this)
 		for k = 1:this.num_feature_frames
 
 			% go through and calculate autocorrelations for each slice of
@@ -88,7 +94,7 @@ methods
 			% MinPeakProminence: necessary vertical descent on both sides in order to count as
 			% a peak
 			% MinPeakDistance: horizonal separation between peaks.
-			[tempo_confidences, tempo_estimates]  = ...
+			[curr_tempo_confidences, curr_tempo_estimates]  = ...
 				findpeaks(this.autocorrelation_data(k, candidate_tempo_range),  ...
 					candidate_tempo_range, ...
 					'MinPeakProminence', 0.05, ...
@@ -104,27 +110,53 @@ methods
 			% range of comb separations to try (in samples)
 			%%%%%%%%%%%%%%
 			tempo_strength = zeros(length(candidate_tempo_range));
-			for m = 1:length(tempo_estimates)
-				acf_comb = autocorrelation_comb(this.feature_win_length, tempo_estimates(m));
+			for m = 1:length(curr_tempo_estimates)
+				acf_comb = autocorrelation_comb(this.feature_win_length, curr_tempo_estimates(m));
 				%%% CHECK THIS
 				tempo_strength(m) = this.autocorrelation_data(k, :)*acf_comb;
 			end;
 
+			% intermediate storage of tempo estimates
+			% (storing the transpose of the two lists is equivalent to storing each
+			% tempo/confidence tuple as a row)
+			this.tempo_estimates{k} = [curr_tempo_estimates', curr_tempo_confidences'];
+		end
+	end
+
+	%%%%%%%%%%%%%%%%%%%%
+	% Compute phase estimates for each tempo hypothesis
+	% following procedure in 'Context-Dependent Beat tracking'
+	%%%%%%%%%%%%%%%%%%%%%
+	function compute_phase_estimates(this)
+		for k = 1:this.num_feature_frames
+			curr_tempo_estimates = this.tempo_estimates{k}(:, 1);
+			curr_tempo_confidences = this.tempo_estimates{k}(:, 2);
+			
 			% if there were no significant peaks in the autocorrelation, just skip
 			% calculating phase alignments
-			if isempty(tempo_estimates)
+			if isempty(curr_tempo_estimates)
+				this.tempo_phase_estimates{k} = [];
 				continue;
 			end;
+			
+			curr_feature_frame = this.get_feature_frame(k);
 
-			%%%%%%%%%%%%%%%%%%%%
-			% Compute phase estimates for each tempo hypothesis
-			% following procedure in 'Context-Dependent Beat tracking'
-			%%%%%%%%%%%%%%%%%%%%%
+			
+			% build up rows of estimates for each frame inside the following loop
+			% this avoids having 'null estimates' which happens when you
+			% preallocate the array with zeros() but then the findpeaks
+			% doesn't find as many peaks as the maximum
+			% This could also be done by removing all the zero rows after the
+			% following loop, but I wasn't bothered
 
-			for tempo_index = 1:length(tempo_estimates)
+			% frame_estimates = zeros(length(tempo_estimates)*this.MAX_PHASE_PEAKS, 4)
+			frame_estimates = zeros(1, 4);
+			estimate_number = 0;
+
+			for tempo_index = 1:length(curr_tempo_estimates)
 				% in samples
-				curr_tempo_estimate = tempo_estimates(tempo_index);
-				curr_tempo_confidence = tempo_confidences(tempo_index);
+				curr_tempo_estimate = curr_tempo_estimates(tempo_index);
+				curr_tempo_confidence = curr_tempo_confidences(tempo_index);
 
 				% make an impulse train for each tempo hypothesis,
 				% then slide it along the detection function for one tempo period,
@@ -147,7 +179,7 @@ methods
 				% backwards from the end of the frame
 
 				phase_estimates = -1*phase_estimates;
-				
+
 				% could calculate and store beat locations here?
 				%beat_locations = zeros(this.feature_win_length, this.MAX_PHASE_PEAKS);
 				num_phase_peaks = length(phase_confidences);
@@ -155,57 +187,61 @@ methods
 				% append tempo_phase_estimate tuples to the kth array of the
 				% tempo_phase_estimates cell array
 				for phase_index = 1:num_phase_peaks
+					estimate_number = estimate_number + 1;
 					tempo_phase_estimate_tuple = [
-						curr_tempo_estimate;
-						curr_tempo_confidence;
-						phase_estimates(phase_index);
-						phase_confidences(phase_index);
+						curr_tempo_estimate, ...
+						curr_tempo_confidence, ...
+						phase_estimates(phase_index), ...
+						phase_confidences(phase_index)
 					];
 
-					this.tempo_phase_estimates{k}(1 + phase_index ...
-						+ (tempo_index - 1)*this.MAX_PHASE_PEAKS, :) ...
-						= tempo_phase_estimate_tuple;
+					frame_estimates(estimate_number, :) = tempo_phase_estimate_tuple;
+
 				end
 			end
 
-			% remove null estimates (all entries are zero) from the
-			% array of estimates for the current frame
+			this.tempo_phase_estimates{k} = frame_estimates;
 		end
 	end
 
 	% for each sample frame, plot the detection function,
 	% ACF with peaks indicated,
 	% and then a plot of superimposed tempo and phase estimates
-	
+
 	% also do a plot of tempo vs phase; plot different tempi on different
 	% subplots
 	function plot_sample_intermediate_data(this, sample_frames)
 		time_axis = this.feature_time_axis;
-
-		for k = sample_frames
-			figure; 
+		for sample_frame = sample_frames
+			if sample_frame > this.num_feature_frames
+				warning('Cant plot sample frame %d; there are only %d feature frames\n', ...
+					sample_frame, this.num_feature_frames);
+				continue;
+			end
+			
+			figure;
 			subplot(3, 1, 1);
-			curr_frame = this.get_feature_frame(k);
+			curr_frame = this.get_feature_frame(sample_frame);
 			plot(time_axis, curr_frame);
 
 			title(sprintf('Detection function: t=%3.2f s', ...
-				(k-1)*this.feature_hop_size/this.feature_sample_rate));
+				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
 			xlabel('Time (seconds)');
 
 			subplot(3, 1, 2);
-			plot(time_axis, this.autocorrelation_data(k, :));
+			plot(time_axis, this.autocorrelation_data(sample_frame, :));
 			hold on;
 			title(sprintf('ACF: t=%3.2f s', ...
-				(k-1)*this.feature_hop_size/this.feature_sample_rate));
+				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
 			xlabel('Lag (seconds)');
 			ylabel('Similarity');
 			stem(this.min_lag, 1);
 			stem(this.max_lag, 1);
 
-			curr_tp_estimates = this.tempo_phase_estimates{k};
+			curr_tp_estimates = this.tempo_phase_estimates{sample_frame};
 
 			% add indications of peaks picked
-			for estimate_idx = 1:length(curr_tp_estimates)
+			for estimate_idx = 1:size(curr_tp_estimates, 1)
 				tempo_estimate = curr_tp_estimates(estimate_idx, 1);
 				tempo_confidence = curr_tp_estimates(estimate_idx, 2);
 				if tempo_estimate ~= 0
@@ -224,26 +260,44 @@ methods
 			% the alignment confidence, which can be overlaid on top of the feature
 			% vector
 
-			estimated_beat_locs = zeros(length(time_axis), size(curr_tp_estimates, 1));
+			% First we pick only the 'most confident' estimates
+			estimates_to_plot = 3;
 
-			for estimate_idx = 1:length(curr_tp_estimates)
-				tempo_estimate = curr_tp_estimates(estimate_idx, 1);
-				tempo_confidence = curr_tp_estimates(estimate_idx, 2);
-				phase_estimate = curr_tp_estimates(estimate_idx, 3);
-				phase_confidence = curr_tp_estimates(estimate_idx, 4);
+			% add a column representing some sort of combined confidence of tempo
+			% and phase, and then plot the most confident of these
 
-				% this sort of makes sense, since the phase estimates are
-				% conditional on the tempo estimates
-				combined_confidence = tempo_confidence*(1 + phase_confidence);
-				if tempo_estimate ~= 0 && phase_confidence > 0
-					% calculate beat locations by adding multiples of the tempo
-					% hypothesis to the beat alignment estimate
-					estimated_beat_locs(end+phase_estimate:-tempo_estimate:1, ...
-						estimate_idx) = combined_confidence;
-				end
+			tempo_confidences = curr_tp_estimates(:, 2);
+			phase_confidences = curr_tp_estimates(:, 4);
+			% this definition sort of makes sense, since the phase estimates are
+			% conditional on the tempo estimates
+			% however neither value is currently constrained to be in the interval [0, 1],
+			% which is not as nice
+			combined_confidences = ...
+				tempo_confidences + tempo_confidences.*phase_confidences;
+
+			% add this column to the estimate array and sort estimate tuples
+			% by combined confidence, in descending order
+			sorted_estimates = sortrows([curr_tp_estimates, combined_confidences], -5);
+		
+			% Here's where we actually calculate and store the beat locations
+
+			estimated_beat_locs = zeros(length(time_axis), estimates_to_plot);
+
+			for estimate_idx = 1:min(estimates_to_plot, size(sorted_estimates, 1))
+				tempo_estimate = sorted_estimates(estimate_idx, 1);
+				phase_estimate = sorted_estimates(estimate_idx, 3);
+				combined_confidence = sorted_estimates(estimate_idx, 5);
+
+				% calculate beat locations by adding multiples of the tempo
+				% hypothesis to the beat alignment estimate
+				estimated_beat_locs(end+phase_estimate:-tempo_estimate:1, ...
+					estimate_idx) = combined_confidence;
 			end
 
 			plot(time_axis, estimated_beat_locs);
+			title('Most confident beat locations');
+			xlabel('Time (s)');
+			ylabel('Combined tempo/phase confidence');
 			%title(sprintf('tempo = %2.3f, t = %3.2f s, band=%d', ...
 			%	tempo_hypothesis/FEATURE_RATE, ...
 			%	(k-1)*FEATURE_HOP_SIZE/FEATURE_RATE, ...

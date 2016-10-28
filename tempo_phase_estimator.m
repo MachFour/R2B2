@@ -51,7 +51,11 @@ properties
 	% i.e. a set of estimates of possible tempo and beat phases produced by
 	% the n'th frame of the input feature. (which corresponds to a section of
 	% audio that is feature_win_time seconds long, and is updated at a frequency
-	% of tempo_update_frequency Hz.
+	% of estimate_update_rate Hz.
+
+	% the first and third values are in samples, and must be multiplied by the feature
+	% rate in order to get a value in seconds.
+	% the second and fourth values are unitless real numbers
 	tempo_phase_estimates;
 end
 
@@ -73,14 +77,14 @@ properties (Dependent)
 	% How often tempo and phase is (re)estimated on
 	% a new frame of features. Given a fixed feature_sample_rate,
 	% this is inversely proportional to feature_hop_size
-	tempo_update_frequency;
+	estimate_update_rate;
 
 	% useful for translating between samples and time
 	feature_time_axis;
 end
 
 methods
-	function initialise(this, estimator_name, feature_data, feature_sample_rate)
+	function initialise(this, feature_data, feature_sample_rate, estimator_name)
 		this.estimator_name = estimator_name;
 		this.feature_data = feature_data;
 		this.feature_sample_rate = feature_sample_rate;
@@ -104,7 +108,7 @@ methods
 	function h = get.feature_hop_size(this)
 		h = this.feature_win_length*(1 - this.FEATURE_WIN_OVERLAP_PERCENT/100);
 	end
-	function f = get.tempo_update_frequency(this)
+	function f = get.estimate_update_rate(this)
 		f = this.feature_sample_rate/this.feature_hop_size;
 	end
 	function n = get.num_feature_frames(this)
@@ -130,7 +134,7 @@ methods
 		fprintf('Feature window length: \t %d samples\n', this.feature_win_length);
 		fprintf('Feature hop size: %d samples\n', this.feature_hop_size);
 		fprintf('Number of feature frames: \t %d\n', this.num_feature_frames);
-		fprintf('Tempo Update Frequency \t: %3.3f Hz\n', this.tempo_update_frequency);
+		fprintf('Tempo Update Frequency \t: %3.3f Hz\n', this.estimate_update_rate);
 	end
 
 	% exports the computed data to files
@@ -152,7 +156,7 @@ methods
 			% set time for estimate estimates from frame k
 			% to be at the end of that frame
 			% so first frame's estimates correspond to FEATURE_TIME
-			frame_time = this.feature_win_time + (k-1)/this.tempo_update_frequency;
+			frame_time = this.feature_win_time + (k-1)/this.estimate_update_rate;
 			curr_tp_estimates = this.tempo_phase_estimates{k};
 			for estimate_index = 1:length(curr_tp_estimates)
 				% tempo and alignment are expresseed in samples,

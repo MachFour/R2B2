@@ -102,7 +102,7 @@ methods
 	% successive frames in order to calculate a difference value,
 	% so it's not super simple. Maybe it's enough to supply a current and previous
 	% frame of audio, however...?
-	function initialise(this, feature_name, audio_data, audio_sample_rate)
+	function initialise(this, audio_data, audio_sample_rate, feature_name)
 		this.feature_name = feature_name;
 		this.audio_data = audio_data;
 		this.audio_sample_rate = audio_sample_rate;
