@@ -25,8 +25,6 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	% each channel is analysed independently
 	tp_estimator = cell(feature1.num_feature_channels);
 	
-
-	
 	for n = 1:feature1.num_feature_channels
 		tp_estimator{n} = tpe_autocorrelation;
 		tp_estimator{n}.initialise(feature1.feature_matrix(:, n), ...
@@ -42,10 +40,11 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 		tp_estimator{n}.plot_sample_intermediate_data(sample_frames);
 		
 		if output_data
-			tp_estimator{n}.output_tp_estimates(data_output_directory);
+			tp_estimator{n}.output_tempo_phase_data(data_output_directory);
 		end
-	end
-		
+    end
+    rubbish=1;
+end
 	
 
 	
