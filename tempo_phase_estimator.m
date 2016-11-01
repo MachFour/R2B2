@@ -142,7 +142,7 @@ methods
 		filename = strcat(data_directory, '/', this.estimator_name, ...
 			this.DATA_OUTPUT_SUFFIX);
 		outfile = fopen(filename, 'w+');
-		
+
 		output_format_string = strcat(...
 			'frame=%d\t', ...
 			'time=%f\t', ...
@@ -158,7 +158,7 @@ methods
 			% so first frame's estimates correspond to FEATURE_TIME
 			frame_time = this.feature_win_time + (k-1)/this.estimate_update_rate;
 			curr_tp_estimates = this.tempo_phase_estimates{k};
-			for estimate_index = 1:length(curr_tp_estimates)
+			for estimate_index = 1:size(curr_tp_estimates, 1)
 				% tempo and alignment are expresseed in samples,
 				% convert to time by dividing by feature rate
 				est_tempo = curr_tp_estimates(estimate_index, 1);
@@ -177,7 +177,7 @@ methods
 			end
 		end
 	end
-	
+
 end % methods
 
 
