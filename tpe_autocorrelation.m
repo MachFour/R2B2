@@ -131,17 +131,17 @@ methods
 		for k = 1:this.num_feature_frames
 			curr_tempo_estimates = this.tempo_estimates{k}(:, 1);
 			curr_tempo_confidences = this.tempo_estimates{k}(:, 2);
-			
+
 			% if there were no significant peaks in the autocorrelation, just skip
 			% calculating phase alignments
 			if isempty(curr_tempo_estimates)
 				this.tempo_phase_estimates{k} = [];
 				continue;
 			end;
-			
+
 			curr_feature_frame = this.get_feature_frame(k);
 
-			
+
 			% build up rows of estimates for each frame inside the following loop
 			% this avoids having 'null estimates' which happens when you
 			% preallocate the array with zeros() but then the findpeaks
@@ -218,7 +218,7 @@ methods
 					sample_frame, this.num_feature_frames);
 				continue;
 			end
-			
+
 			figure;
 			subplot(3, 1, 1);
 			curr_frame = this.get_feature_frame(sample_frame);
@@ -268,17 +268,13 @@ methods
 
 			tempo_confidences = curr_tp_estimates(:, 2);
 			phase_confidences = curr_tp_estimates(:, 4);
-			% this definition sort of makes sense, since the phase estimates are
-			% conditional on the tempo estimates
-			% however neither value is currently constrained to be in the interval [0, 1],
-			% which is not as nice
-			combined_confidences = ...
-				tempo_confidences + tempo_confidences.*phase_confidences;
+
+			combined_confidences = phase_confidences;
 
 			% add this column to the estimate array and sort estimate tuples
 			% by combined confidence, in descending order
 			sorted_estimates = sortrows([curr_tp_estimates, combined_confidences], -5);
-		
+
 			% Here's where we actually calculate and store the beat locations
 
 			estimated_beat_locs = zeros(length(time_axis), estimates_to_plot);
