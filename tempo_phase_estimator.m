@@ -6,6 +6,8 @@
 % exactly where the beats lie, but obviously this is unattainable
 % in reality
 
+% Author: Max Fisher
+
 classdef (Abstract) tempo_phase_estimator < handle
 
 properties (Constant)

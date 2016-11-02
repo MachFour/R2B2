@@ -1,4 +1,7 @@
 % r2b2.m
+% This script shows how to use the different parts of the R2B2 system together to produce
+% useful beat-tracking outputs
+
 % Author: Max Fisher
 
 function r2b2(audio_filename, audio_directory, data_output_directory)

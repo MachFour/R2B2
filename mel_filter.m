@@ -9,6 +9,7 @@
 % of the DFT magnitude spectrum is assumed to be discarded)
 
 % Code modified from http://www.cs.tut.fi/kurssit/SGN-4010/Ex2013/Create_MelFrequencyFilterBank.m
+% Author: Max Fisher
 
 function mel_filterbank = mel_filter(fs, Nfft, num_filters)
 Hz_to_mel = @(f) 2595*log10(1+f/700);
@@ -26,7 +27,7 @@ filter_centre_bins = round(filter_centre_freqs/(fs/2)*(Nfft/2));
 filter_centre_bins(1) = 1;
 
 if filter_centre_bins(2) == 0,
-    error('Not enough DFT bins for this number of filters!')
+	error('Not enough DFT bins for this number of filters!')
 end
 
 %disp(filter_centre_bins);
@@ -35,17 +36,17 @@ end
 mel_filterbank = zeros(num_filters, Nfft/2);
 
 for filter_index = 1:num_filters
-    % bins over which this filter has nonzero magnitude response
-    low_bin = filter_centre_bins(filter_index);
-    central_bin = filter_centre_bins(filter_index+1);
-    high_bin = filter_centre_bins(filter_index+2);
+	% bins over which this filter has nonzero magnitude response
+	low_bin = filter_centre_bins(filter_index);
+	central_bin = filter_centre_bins(filter_index+1);
+	high_bin = filter_centre_bins(filter_index+2);
 
-    % set the magnitude response for the two edges of the triangle
-    % note increase/decrease is linear in the Hz scale
-    mel_filterbank(filter_index, low_bin:central_bin) = ...
-        (0:(central_bin - low_bin))/(central_bin - low_bin);
-    mel_filterbank(filter_index, central_bin:high_bin) = ...
-        ((high_bin - central_bin):-1:0)/(high_bin - central_bin);
+	% set the magnitude response for the two edges of the triangle
+	% note increase/decrease is linear in the Hz scale
+	mel_filterbank(filter_index, low_bin:central_bin) = ...
+		(0:(central_bin - low_bin))/(central_bin - low_bin);
+	mel_filterbank(filter_index, central_bin:high_bin) = ...
+		((high_bin - central_bin):-1:0)/(high_bin - central_bin);
 end
 
 % example plotting code (from source)

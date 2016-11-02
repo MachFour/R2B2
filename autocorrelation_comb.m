@@ -1,3 +1,8 @@
+% helper function to find peaks of autocorrelation, while taking into account
+% the harmonics inherent in autocorrelation
+
+% Author: Max Fisher
+
 function comb = autocorrelation_comb(length, lag_samples)
 % make impulse matrix to estimate 
 
@@ -21,3 +26,4 @@ end;
 % tempo lag varies from 1:FEATURE_WIN_LENGTH/4 samples
 
 %stem(comb);
+end

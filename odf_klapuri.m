@@ -3,6 +3,8 @@
 % and calculates the energy in critical bands over time
 % As done in Klapuri et al. (2006), "Analysis of the meter of acoustic musical signals"
 
+% Author: Max Fisher
+
 classdef odf_klapuri < feature_extractor
 
 properties (Constant)

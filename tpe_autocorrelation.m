@@ -5,6 +5,8 @@
 % spaced at that tempo period to locate where the periodic peaks of the
 % feature actually are (i.e. the beat phase)
 
+% Author: Max Fisher
+
 classdef tpe_autocorrelation < tempo_phase_estimator
 
 properties (Constant)
