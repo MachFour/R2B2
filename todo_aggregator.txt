@@ -1,0 +1,8 @@
+TO DO
+- write plot_cluster method and use it to clean up aggregator_demo
+- write classes for 'cluster' 'cluster_set' and 'phase_cluster_matrix' to improve readability
+- add print 'points_in_cluster' 'print_points_in_cluster_set' and 'print_points_in_cluster_matrix' methods to the test class
+- don't check all tempo harmonics when phase clustering...
+- fix get_centre_of_mass for phase
+- get phase clustering working...
+- phase clustering shouldn't need to find evidence for it's own tempo cluster (i.e. when i = 1)
