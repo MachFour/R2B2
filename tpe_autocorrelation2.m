@@ -18,7 +18,7 @@ properties (Constant)
 	% how many peaks to pick from the beat alignment (phase) function, per frame
 	MAX_PHASE_PEAKS = 4;
 
-	
+
 	% the maximum total number of tempo/phase estimates for each feature
 	% frame is given by MAX_TEMPO_PEAKS*MAX_PHASE_PEAKS
 end
@@ -60,15 +60,15 @@ methods
 
 			% go through and calculate autocorrelations for each slice of
 			% this.feature_win_length
-			
+
 			% we use the new method of autocorrelation
 
 			% it's a column vector
 			curr_feature_frame = this.get_feature_frame(k);
 			first_half = curr_feature_frame(1:this.feature_win_length/2);
 			second_half = curr_feature_frame(this.feature_win_length/2+1:end);
-			
-			acf2 = autocorrelation2(second_half, first_half);			
+
+			acf2 = autocorrelation2(second_half, first_half);
 			this.autocorrelation_data(k, :) = acf2;
 
 			% now pick peaks!
@@ -76,11 +76,11 @@ methods
 
 			% note that there may be peaks at smaller lag than MAX_BPM that reflect the tatum
 			% (semiquaver/quaver) pulse
-			
+
 			% MinPeakProminence: necessary vertical descent on both sides 
 			% in order to count as a peak
 			% since all values are less than 1, we make this 0.025
-			
+
 			% MinPeakDistance: horizonal separation between peaks
 			% -> make it equivalent to 2x the maximum allowed tempo
 
@@ -92,7 +92,7 @@ methods
 					'MinPeakProminence', 0.025, ...
 					'NPeaks', this.MAX_TEMPO_PEAKS, ...
 					'SortStr', 'descend');
-			
+
 			% intermediate storage of tempo estimates
 			% (storing the transpose of the two lists is equivalent to storing each
 			% tempo/confidence tuple as a row)
@@ -188,8 +188,9 @@ methods
 	% also do a plot of tempo vs phase; plot different tempi on different
 	% subplots
 	function plot_sample_intermediate_data(this, sample_frames)
-		time_axis = this.feature_time_axis;
+
 		for sample_frame = sample_frames
+			time_axis = this.get_frame_end_time(sample_frame) + this.feature_time_axis;
 			if sample_frame > this.num_feature_frames
 				warning('Cant plot sample frame %d; there are only %d feature frames\n', ...
 					sample_frame, this.num_feature_frames);
@@ -201,7 +202,7 @@ methods
 % 			subplot(3, 1, 1);
 
 % 			plot(time_axis, curr_frame);
-% 
+
 % 			title(sprintf('Detection function: t=%3.2f s', ...
 % 				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
 % 			xlabel('Time (seconds)');
@@ -249,7 +250,7 @@ methods
 				subplot(estimates_to_plot, 1, estimate_idx);
 				plot(time_axis, curr_frame);
 				hold on;
-				
+
 				tempo_estimate = sorted_estimates(estimate_idx, 1);
 				phase_estimate = sorted_estimates(estimate_idx, 3);
 				confidence = sorted_estimates(estimate_idx, 4);
@@ -259,12 +260,12 @@ methods
 				estimated_beat_locs = zeros(length(time_axis), estimates_to_plot);
 				estimated_beat_locs(end+phase_estimate:-tempo_estimate:1, ...
 					estimate_idx) = confidence;
-			
+
 				plot(time_axis, estimated_beat_locs);
-				
+
 				estimated_period = tempo_estimate/this.feature_sample_rate;
 				estimated_bpm = 60/estimated_period;
-				title(sprintf('Beat locations: %.1f BPM (%.2f s), confidence = %.2f', ...
+				title(sprintf('Beats: %.1f BPM (%.2f s), confidence = %.2f', ...
 					estimated_bpm, estimated_period, confidence));
 				xlabel('Time (s)');
 				ylabel('Confidence');

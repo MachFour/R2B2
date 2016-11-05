@@ -162,6 +162,12 @@ methods
 		end
 	end
 
+	% returns the time when frame k ends, in seconds
+	% first frame ends at this.feature_win_time
+	function time = get_frame_end_time(this, k)
+		time = this.feature_win_time + (k-1)/this.estimate_update_rate;
+	end
+
 	function print_properties(this)
 		fprintf('Properties for %s:\n', this.estimator_name);
 		fprintf('Feature window time: \t %f s \n', this.feature_win_time);
@@ -190,7 +196,6 @@ methods
 			% set time for estimate estimates from frame k
 			% to be at the end of that frame
 			% so first frame's estimates correspond to FEATURE_TIME
-			frame_time = this.feature_win_time + (k-1)/this.estimate_update_rate;
 			curr_tp_estimates = this.tempo_phase_estimates{k};
 			for estimate_index = 1:size(curr_tp_estimates, 1)
 				% tempo and alignment are expresseed in samples,
@@ -202,7 +207,7 @@ methods
 
 				fprintf(outfile, output_format_string, ...
 					k, ...
-					frame_time, ...
+					get_frame_end_time(k), ...
 					est_tempo/this.feature_sample_rate, ...
 					est_tempo_confidence, ...
 					est_phase/this.feature_sample_rate, ...
