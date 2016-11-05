@@ -42,22 +42,16 @@ methods
 		% up artificially. When using 4 equally spaced impulses at a given lag
 		% to measure the periodicity (autocorrelation comb), at higher lags the 4th
 		% impulse will pass through this artifically high zone. So we limit max_lag.
-		if this.max_lag*this.feature_sample_rate > this.feature_win_length/4 - 30
+		if this.max_lag_samples > this.feature_win_length/4 - 30
 			warning('Reduced maximum lag to be 30 samples less than feature_win_length/4');
-			new_max_lag_samples = this.feature_win_length/4 - 30;
-			new_max_lag = new_max_lag_samples/this.feature_sample_rate;
-			this.min_bpm = 60/new_max_lag;
+			this.max_lag_samples = this.feature_win_length/4 - 30;
 			fprintf('New min_bpm: %3.2f BPM\n', this.min_bpm);
 			fprintf('New max_lag: %3.2f s\n', this.max_lag);
 
 		end
 
 		this.autocorrelation_data = zeros(this.num_feature_frames, this.feature_win_length);
-		% initialise tempo and phase estimate array
-		for k = 1:this.num_feature_frames
-
-		end
-
+		this.tempo_strength_data = zeros(this.num_feature_frames, length(this.tempo_lag_range));
 	end
 
 	function print_properties(this)
@@ -81,42 +75,44 @@ methods
 			% go through and calculate autocorrelations for each slice of
 			% FEATURE_LENGTH detection function features
 			% no windowing so far
-			curr_feature_frame = this.get_feature_frame(k); % no windowing so far
 
+			% it's a row vector
+			curr_feature_frame = this.get_feature_frame(k);
 			this.autocorrelation_data(k, :) = autocorrelation(curr_feature_frame);
 
-			% range of lags to consider (in samples)
-			candidate_tempo_range = round(this.feature_sample_rate*this.min_lag) : ...
-				round(this.feature_sample_rate*this.max_lag);
-
 			% now pick peaks!
+			% make sure to correct for 1-indexing in arrays
+			acf_data_in_tempo_range = this.autocorrelation_data(k, this.tempo_lag_range+1);
+
 			% note that there may be peaks at smaller lag than MAX_BPM that reflect the tatum
 			% (semiquaver/quaver) pulse
-			% find peaks until confidence is within a certain ratio of the highest  
+			% find peaks until confidence is within a certain ratio of the highest?
 			% MinPeakProminence: necessary vertical descent on both sides in order to count as
 			% a peak
 			% MinPeakDistance: horizonal separation between peaks.
+
 			[curr_tempo_confidences, curr_tempo_estimates]  = ...
-				findpeaks(this.autocorrelation_data(k, candidate_tempo_range),  ...
-					candidate_tempo_range, ...
+				findpeaks(acf_data_in_tempo_range,  ...
+					this.tempo_lag_range, ...
 					'MinPeakProminence', 0.05, ...
-					'MinPeakDistance', this.min_lag/2, ...
+					'MinPeakDistance', this.min_lag_samples/2, ...
 					'MinPeakHeight', 0, ...
 					'NPeaks', this.MAX_TEMPO_PEAKS, ...
 					'SortStr', 'descend');
 			% remove peak at 0, and peaks with confidence below 0.
+
 
 			%%%%%%%%%%%%%%%
 			% alternative: 'SHIFT-INVARIANT-COMB-FILTERBANK'
 			% multiply with periodic comb for each possible tempo in range
 			% range of comb separations to try (in samples)
 			%%%%%%%%%%%%%%
-			tempo_strength = zeros(length(candidate_tempo_range));
-			for m = 1:length(curr_tempo_estimates)
-				acf_comb = autocorrelation_comb(this.feature_win_length, curr_tempo_estimates(m));
+			for m = 1:length(this.tempo_lag_range)
+				lag_candidate = this.tempo_lag_range(m);
+				acf_comb = autocorrelation_comb(length(curr_feature_frame), lag_candidate);
 				%%% CHECK THIS
-				tempo_strength(m) = this.autocorrelation_data(k, :)*acf_comb;
-			end;
+				this.tempo_strength_data(k, m) = this.autocorrelation_data(k, :)*acf_comb;
+			end
 
 			% intermediate storage of tempo estimates
 			% (storing the transpose of the two lists is equivalent to storing each
@@ -143,7 +139,6 @@ methods
 
 			curr_feature_frame = this.get_feature_frame(k);
 
-
 			% build up rows of estimates for each frame inside the following loop
 			% this avoids having 'null estimates' which happens when you
 			% preallocate the array with zeros() but then the findpeaks
@@ -164,14 +159,16 @@ methods
 				% then slide it along the detection function for one tempo period,
 				% to find where it lines up the best
 				% give feature as row vector, as it is flipped left-to-right
+
 				alignment_function = ...
-					beat_alignment_function(curr_feature_frame', curr_tempo_estimate);
+					beat_alignment_function(curr_feature_frame, curr_tempo_estimate);
 
 				% max distance between peaks depends on the tempo
 				% assume that 'off by half a semiquaver' is the same beat
 				% location
 				[phase_confidences, phase_estimates]  = ...
-					findpeaks(alignment_function, 1:curr_tempo_estimate, ...
+					findpeaks(alignment_function, ...
+						0:curr_tempo_estimate-1, ...
 						'MinPeakHeight', 0.01, ...
 						'MinPeakDistance', curr_tempo_estimate/8, ...
 						'NPeaks', this.MAX_PHASE_PEAKS, ...
@@ -221,24 +218,28 @@ methods
 				continue;
 			end
 
-			figure;
-			subplot(3, 1, 1);
 			curr_frame = this.get_feature_frame(sample_frame);
-			plot(time_axis, curr_frame);
 
-			title(sprintf('Detection function: t=%3.2f s', ...
-				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
-			xlabel('Time (seconds)');
+% 			subplot(3, 1, 1);
 
-			subplot(3, 1, 2);
-			plot(time_axis, this.autocorrelation_data(sample_frame, :));
+% 			plot(time_axis, curr_frame);
+% 
+% 			title(sprintf('Detection function: t=%3.2f s', ...
+% 				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
+% 			xlabel('Time (seconds)');
+
+			acf_data = this.autocorrelation_data(sample_frame, :);
+
+			figure;
+
+			plot(0:length(acf_data)-1, acf_data);
 			hold on;
 			title(sprintf('ACF: t=%3.2f s', ...
 				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
-			xlabel('Lag (seconds)');
+			xlabel('Lag (samples)');
 			ylabel('Similarity');
-			stem(this.min_lag, 1);
-			stem(this.max_lag, 1);
+			stem(this.min_lag_samples, 1);
+			stem(this.max_lag_samples, 1);
 
 			curr_tp_estimates = this.tempo_phase_estimates{sample_frame};
 
@@ -247,28 +248,29 @@ methods
 				tempo_estimate = curr_tp_estimates(estimate_idx, 1);
 				tempo_confidence = curr_tp_estimates(estimate_idx, 2);
 				if tempo_estimate ~= 0
-					stem(time_axis(tempo_estimate), tempo_confidence);
+					stem(tempo_estimate, tempo_confidence);
 				end
 			end
 
-			% plot autocorrelation comb function
-			%plot((candidate_tempos/this.feature_sample_rate), tempo_strength(:, c));
-			%title(sprintf('Tempo strength'));
-			%xlabel('Tempo (BPM)');
+			hold on;
 
-			subplot(3, 1, 3);
+			%plot autocorrelation comb function
+			plot(this.tempo_lag_range, this.tempo_strength_data(sample_frame, :));
+			%title(sprintf('Tempo strength'));
+			%xlabel('Tempo (lag)');
+
+ 			figure;
 
 			% plot esimated beat locations as impulses with height equal to
 			% the alignment confidence, which can be overlaid on top of the feature
 			% vector
 
 			% First we pick only the 'most confident' estimates
-			estimates_to_plot = 3;
+			estimates_to_plot = 4;
 
 			% add a column representing some sort of combined confidence of tempo
 			% and phase, and then plot the most confident of these
 
-			tempo_confidences = curr_tp_estimates(:, 2);
 			phase_confidences = curr_tp_estimates(:, 4);
 
 			combined_confidences = phase_confidences;
@@ -293,9 +295,11 @@ methods
 			end
 
 			plot(time_axis, estimated_beat_locs);
+			hold on; 
+			plot(time_axis, curr_frame);
 			title('Most confident beat locations');
 			xlabel('Time (s)');
-			ylabel('Combined tempo/phase confidence');
+			ylabel('Confidence');
 			%title(sprintf('tempo = %2.3f, t = %3.2f s, band=%d', ...
 			%	tempo_hypothesis/FEATURE_RATE, ...
 			%	(k-1)*FEATURE_HOP_SIZE/FEATURE_RATE, ...
