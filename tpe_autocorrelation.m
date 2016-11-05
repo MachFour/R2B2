@@ -76,7 +76,7 @@ methods
 			% FEATURE_LENGTH detection function features
 			% no windowing so far
 
-			% it's a row vector
+			% it's a column vector
 			curr_feature_frame = this.get_feature_frame(k);
 			this.autocorrelation_data(k, :) = autocorrelation(curr_feature_frame);
 
@@ -158,8 +158,8 @@ methods
 				% make an impulse train for each tempo hypothesis,
 				% then slide it along the detection function for one tempo period,
 				% to find where it lines up the best
-				% give feature as row vector, as it is flipped left-to-right
-
+				% feature needs to be a column vector
+				
 				alignment_function = ...
 					beat_alignment_function(curr_feature_frame, curr_tempo_estimate);
 

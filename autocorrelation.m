@@ -24,7 +24,7 @@ function ac = autocorrelation(feature_frame)
 	ac = circshift(ac, shift_array);
 	% discard redundant second half of samples and correct for
 	% bias caused by shifting (i.e. unbiased autocorrelation)
-	ac = ac(1:frame_length)./(frame_length:-1:1);
+	ac = ac(1:frame_length)./(frame_length:-1:1)';
 
 	% normalise so that first coefficient is 1, that way we can compare
 	% between different autocorrelations

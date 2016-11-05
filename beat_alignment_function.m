@@ -3,22 +3,25 @@
 % of beats in a frame of an onset detection function.
 % beat spacing is given in samples.
 
-% frame should be a row vector
-% returns a row vector
+% frame should be a column vector
+% returns a column vector
 
 % Author: Max Fisher
 function baf = beat_alignment_function(frame, tempo_spacing)
-	frame_length = length(frame);
+	frame_length = size(frame, 1);
+	if frame_length ~= length(frame)
+		warning('Frame is likely not a column vector!');
+	end
 
 	% make mean zero but keep variance?
 	% have to think about this
 	%frame = frame - mean(frame);
 	
 	% we reverse frame to examine most recent onsets first
-	frame = fliplr(frame);
+	frame = flipud(frame);
 	SPIKE_WIDTH = 2;
 
-	impulse_train = zeros(1, frame_length);
+	impulse_train = zeros(size(frame));
 	% tempo is in lag_units (seconds)
 	for w = 1:SPIKE_WIDTH
 	    impulse_train(w:tempo_spacing:end-tempo_spacing) = 1;
@@ -30,7 +33,7 @@ function baf = beat_alignment_function(frame, tempo_spacing)
 	% w(n) = a^(-a*n/N)
 	%choose a = 2
 	a = 2;
-	impulse_weighting = a.^(-a/frame_length*(1:frame_length));
+	impulse_weighting = a.^(-a/frame_length*(1:frame_length)');
 	impulse_train = impulse_train.*impulse_weighting;
 
 	% normalise impulse train to have sum 1,
@@ -45,9 +48,9 @@ function baf = beat_alignment_function(frame, tempo_spacing)
 	% only makes sense to consider shifts up to tempo_spacing, since
 	% beyond that point the comb 'teeth' would fall off the end
 
-	baf = zeros(1, tempo_spacing);
+	baf = zeros(tempo_spacing, 1);
 	for shift = 0:tempo_spacing-1
-		shifted_frame = circshift(frame, [0, -shift]); 
+		shifted_frame = circshift(frame, -shift); 
 		baf(shift+1) = sum(shifted_frame.*impulse_train);
 	end;
 

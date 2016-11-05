@@ -103,6 +103,9 @@ end
 methods
 	function initialise(this, feature_data, feature_sample_rate, estimator_name)
 		this.estimator_name = estimator_name;
+		if size(feature_data, 2) ~= 1
+			error('feature_data cant be a matrix');
+		end
 		this.feature_data = feature_data;
 		this.feature_sample_rate = feature_sample_rate;
 		% make the actual window length a power of 2
