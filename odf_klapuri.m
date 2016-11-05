@@ -9,7 +9,7 @@ classdef odf_klapuri < feature_extractor
 
 properties (Constant)
     % low pass filter for interpolating the log magnitude spectrum
-	LP_CUTOFF_FREQ = 15; %Hz
+	LP_CUTOFF_FREQ = 10; %Hz
 	LP_ORDER = 6;
 
 	NUM_MEL_FILTERS = 36;
@@ -30,8 +30,7 @@ properties
 	feature_upsample_factor = 2;
 
 	% stores previously computed values, needed to take a difference
-	compressed_mel_band_energy;
-	interpolated_mel_band_energy;
+	processed_band_energy;
 
 	% Mel filterbank: used for MFCC's and also for Klapuri's features
 	% returns a NUM_MEL_FILTERS*AUDIO_WIN_LENGTH/2 size matrix,
@@ -39,13 +38,13 @@ properties
 	mel_filterbank;
 	% handle to get vector of which filters correspond to which channel
 	mel_filters_in_channel;
-	
+
 	% filter for doing interpolation of feature data
 	LP_num;
 	LP_denom;
 	% when saving the final feature value, we multiply by this ratio
 	% to compensate for the small gain of the low pass filter
-	LP_compensation_factor;
+	LP_gain;
 
     % divide up filters evenly into NUM_FEATURE_CHANNELS channels
 	filter_divisions;
@@ -68,11 +67,11 @@ methods
 		LP_cutoff_freq_normalised = this.LP_CUTOFF_FREQ/(this.feature_sample_rate/2);
 
 		[this.LP_num, this.LP_denom] = butter(this.LP_ORDER, LP_cutoff_freq_normalised);
-		this.LP_compensation_factor = this.feature_sample_rate/this.LP_CUTOFF_FREQ;
+		this.LP_gain = this.feature_sample_rate/this.LP_CUTOFF_FREQ;
 
-		this.compressed_mel_band_energy = ...
-			zeros(this.num_audio_frames, this.NUM_MEL_FILTERS);
-		this.interpolated_mel_band_energy = ...
+		% stored the (compressed, upsampled and filtered)
+		% mel band energy in successive frames
+		this.processed_band_energy = ...
 			zeros(this.feature_upsample_factor*this.num_audio_frames, this.NUM_MEL_FILTERS);
 
 		this.mel_filterbank = mel_filter(this.audio_sample_rate, ...
@@ -80,15 +79,18 @@ methods
 
 		this.filter_divisions = round(linspace(1,this.NUM_MEL_FILTERS, ...
 			this.num_feature_channels+1));
-		
+
 		this.mel_filters_in_channel = @(c) this.filter_divisions(c):this.filter_divisions(c+1);
 
-	end;
+	end
 
 
 	function compute_feature(this)
-		for k = 1:this.num_audio_frames
-			curr_frame = this.get_windowed_audio_frame(k);
+		% store filter data in between loop iterations
+		filter_delays = zeros(this.LP_ORDER, this.NUM_MEL_FILTERS);
+
+		for n = 1:this.num_audio_frames
+			curr_frame = this.get_windowed_audio_frame(n);
 
 			%mean = sum(curr_frame)/length(curr_frame);
 			%variance = sum(curr_frame.^2)/(length(curr_frame) - 1);
@@ -104,26 +106,50 @@ methods
 
 			mel_band_energy = this.mel_filterbank * power_spectrum;
 
+			% mel band energy is a vector of length this.NUM_MEL_FILTERS
+
 			% use log-compression as Klapuri does, mu = 100
-			this.compressed_mel_band_energy(k, :) = log(1 + this.MU*mel_band_energy)/log(1 + this.MU);
-		end
+			compressed_band_energy = log(1 + this.MU*mel_band_energy)/log(1 + this.MU);
 
-		% here Klapuri performs a 2x interpolation of the compressed
-		% mel band energy over time before calculating the difference between frames
-		% have to find a way of doing this inside the loop
-		this.interpolated_mel_band_energy = upsample(this.compressed_mel_band_energy, this.feature_upsample_factor);
-		% do this with [Y, Zf] = filter(B, A, X, Zi, 1);
-		this.interpolated_mel_band_energy = filter(this.LP_num, this.LP_denom, this.interpolated_mel_band_energy, [], 1);
+			% here Klapuri performs a 2x interpolation of the compressed
+			% mel band energy over time before calculating the difference between frames
 
-		for k = 2:this.feature_data_length
-			% take the half-wave rectified difference between this and prev frame's
-			% log power spectrum, to create a feature that peaks at the onset time
+			% put feature data as a row and feature_upsample_factor - 1 rows of zeros into
+			% a matrix to be low pass filtered
 
-			% Bock: second difference so that we take the difference with a 50%
-			% overlapping window, but have double the feature rate
+			upsampled_band_energy = [
+				compressed_band_energy'
+				zeros(this.feature_upsample_factor - 1, this.NUM_MEL_FILTERS)
+			];
 
-			unrectified_difference = this.interpolated_mel_band_energy(k, :) ...
-				- this.interpolated_mel_band_energy(k - 1, :);
+			% filter along first dimension (frames), using the low pass filter, and store the
+			% filter delays for the next loop iteration
+			[interpolated_band_energy, filter_delays] = ...
+				filter(this.LP_num, this.LP_denom, upsampled_band_energy, filter_delays, 1);
+
+			% correct slice of length this.feature_upsample_factor
+			% e.g. for feature_upsample_factor = 2, this will be
+			% 2*n-1:2*n
+			save_indices = (this.feature_upsample_factor*(n-1)+1):this.feature_upsample_factor*n;
+			
+			this.processed_band_energy(save_indices, :) = interpolated_band_energy;
+
+			% now go through the interpolated energy vector and take 1-sample 
+			% differences, adding positive differences from adjacent bands 
+			% together to create feature channels, where each one peaks at 
+			% energy rises occuring somewhere in their set of mel frequencies
+			
+			% for each audio frame we have this.num_feature_channels
+			% rows of processed_band_energy to process. Do this matrix-wise
+			
+			difference_indices = save_indices - 1;
+			if n == 1
+				 % first frame will just be subtracted from itself
+				difference_indices(1) = 1;
+			end
+			
+			unrectified_difference = interpolated_band_energy ...
+				- this.processed_band_energy(difference_indices, :);
 
 			% half-wave rectified difference: set all negative entries to 0
 			HWR_difference = unrectified_difference;
@@ -131,18 +157,21 @@ methods
 
 			for c = 1:this.num_feature_channels
 				mel_filters_to_sum = this.mel_filters_in_channel(c);
+				% these are vectors of length equal to
+				% feature_upsample_factor (so typically 2)
 				undifferenced_band_energy = ...
-					sum(this.interpolated_mel_band_energy(k, mel_filters_to_sum), 2);
+					sum(interpolated_band_energy(:, mel_filters_to_sum), 2);
 				differenced_band_energy = ...
-					sum(HWR_difference(mel_filters_to_sum));
-				
+					sum(HWR_difference(:, mel_filters_to_sum), 2);
+
 				% weighted sum the result with the undifferentiated log_power_spectrum
 				% makes analysis better according to [4]
 				% also multiply differenced filter output by ratio of
 				% sampling frequencies of audio and low pass filter, (again following [4])
-				this.feature_matrix(k, c) = (1 - this.LAMBDA)*undifferenced_band_energy + ...
-					this.LAMBDA*this.LP_compensation_factor*differenced_band_energy;
+				this.feature_matrix(save_indices, c) = (1 - this.LAMBDA)*undifferenced_band_energy + ...
+					this.LAMBDA*this.LP_gain*differenced_band_energy;
 			end
+			
 		end
 
 
@@ -155,22 +184,22 @@ methods
 			% nothing to take a differential with
 			if frame == 1
 				warning('Cannot calculate feature differential for frame 1');
-				unrectified_difference = this.interpolated_mel_band_energy(frame, :);
+				unrectified_difference = this.processed_band_energy(frame, :);
 			else
-				unrectified_difference = this.interpolated_mel_band_energy(frame, :) ...
-				- this.interpolated_mel_band_energy(frame-1, :);
+				unrectified_difference = this.processed_band_energy(frame, :) ...
+				- this.processed_band_energy(frame-1, :);
 			end
 
-			HWR_difference = this.LP_compensation_factor*unrectified_difference;
+			HWR_difference = this.LP_gain*unrectified_difference;
 			HWR_difference(HWR_difference < 0) = 0;
 
 			figure;
 			subplot(2, 1, 1);
-			plot(this.interpolated_mel_band_energy(frame, :));
+			plot(this.processed_band_energy(frame, :));
 			title(sprintf('mel band energies, frame %d', frame));
 			subplot(2, 1, 2);
 			plot(HWR_difference);
-			title(sprintf('LP compensated HWR difference, frame %d', frame));
+			title(sprintf('Rectified difference, frame %d->%d', frame-1, frame));
 		end
 
 	end
