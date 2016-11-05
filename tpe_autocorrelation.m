@@ -27,10 +27,6 @@ properties
 	% but each element of this cell array is a list of tuples of the form
 	% (tempo, tempo_confidence)
 	tempo_estimates;
-
-	% store a measure of the tempo strength, for each candidate tempo,
-	% as an alternative to peak picking of the raw autocorrelation function.
-	tempo_strength_data;
 end
 
 
@@ -51,7 +47,6 @@ methods
 		end
 
 		this.autocorrelation_data = zeros(this.num_feature_frames, this.feature_win_length);
-		this.tempo_strength_data = zeros(this.num_feature_frames, length(this.tempo_lag_range));
 	end
 
 	function print_properties(this)
@@ -78,7 +73,8 @@ methods
 
 			% it's a column vector
 			curr_feature_frame = this.get_feature_frame(k);
-			this.autocorrelation_data(k, :) = autocorrelation(curr_feature_frame);
+			this.autocorrelation_data(k, 1:this.feature_win_length) = ...
+				autocorrelation(curr_feature_frame);
 
 			% now pick peaks!
 			% make sure to correct for 1-indexing in arrays
@@ -100,19 +96,6 @@ methods
 					'NPeaks', this.MAX_TEMPO_PEAKS, ...
 					'SortStr', 'descend');
 			% remove peak at 0, and peaks with confidence below 0.
-
-
-			%%%%%%%%%%%%%%%
-			% alternative: 'SHIFT-INVARIANT-COMB-FILTERBANK'
-			% multiply with periodic comb for each possible tempo in range
-			% range of comb separations to try (in samples)
-			%%%%%%%%%%%%%%
-			for m = 1:length(this.tempo_lag_range)
-				lag_candidate = this.tempo_lag_range(m);
-				acf_comb = autocorrelation_comb(length(curr_feature_frame), lag_candidate);
-				%%% CHECK THIS
-				this.tempo_strength_data(k, m) = this.autocorrelation_data(k, :)*acf_comb;
-			end
 
 			% intermediate storage of tempo estimates
 			% (storing the transpose of the two lists is equivalent to storing each
@@ -252,13 +235,6 @@ methods
 				end
 			end
 
-			hold on;
-
-			%plot autocorrelation comb function
-			plot(this.tempo_lag_range, this.tempo_strength_data(sample_frame, :));
-			%title(sprintf('Tempo strength'));
-			%xlabel('Tempo (lag)');
-
  			figure;
 
 			% plot esimated beat locations as impulses with height equal to
@@ -300,12 +276,6 @@ methods
 			title('Most confident beat locations');
 			xlabel('Time (s)');
 			ylabel('Confidence');
-			%title(sprintf('tempo = %2.3f, t = %3.2f s, band=%d', ...
-			%	tempo_hypothesis/FEATURE_RATE, ...
-			%	(k-1)*FEATURE_HOP_SIZE/FEATURE_RATE, ...
-			%	c)); 
-			%xlabel('Offset from end of frame (seconds)');
-			%ylabel('Strength');
 		end
 	end
 
