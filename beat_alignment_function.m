@@ -16,7 +16,7 @@ function baf = beat_alignment_function(frame, tempo_spacing)
 	% make mean zero but keep variance?
 	% have to think about this
 	%frame = frame - mean(frame);
-	
+
 	% we reverse frame to examine most recent onsets first
 	frame = flipud(frame);
 	SPIKE_WIDTH = 2;

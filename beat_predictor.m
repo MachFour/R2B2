@@ -3,6 +3,8 @@
 % (for the same piece of music) and outputs predicted beat times
 % over the course of the excerpt
 
+% Author: Max Fisher
+
 classdef (Abstract) beat_predictor < handle
 
 properties (Constant)

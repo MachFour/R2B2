@@ -20,7 +20,7 @@ properties (Constant)
 	% parameter for weighted sum of differenced feature with non-differenced
 	LAMBDA = 0.8;
 
-end
+end % properties (Constant)
 
 properties
 	num_feature_channels = 4;
@@ -48,7 +48,7 @@ properties
 
     % divide up filters evenly into NUM_FEATURE_CHANNELS channels
 	filter_divisions;
-end
+end % properties
 
 
 methods
@@ -131,23 +131,23 @@ methods
 			% e.g. for feature_upsample_factor = 2, this will be
 			% 2*n-1:2*n
 			save_indices = (this.feature_upsample_factor*(n-1)+1):this.feature_upsample_factor*n;
-			
+
 			this.processed_band_energy(save_indices, :) = interpolated_band_energy;
 
-			% now go through the interpolated energy vector and take 1-sample 
-			% differences, adding positive differences from adjacent bands 
-			% together to create feature channels, where each one peaks at 
+			% now go through the interpolated energy vector and take 1-sample
+			% differences, adding positive differences from adjacent bands
+			% together to create feature channels, where each one peaks at
 			% energy rises occuring somewhere in their set of mel frequencies
-			
+
 			% for each audio frame we have this.num_feature_channels
 			% rows of processed_band_energy to process. Do this matrix-wise
-			
+
 			difference_indices = save_indices - 1;
 			if n == 1
 				 % first frame will just be subtracted from itself
 				difference_indices(1) = 1;
 			end
-			
+
 			unrectified_difference = interpolated_band_energy ...
 				- this.processed_band_energy(difference_indices, :);
 
@@ -171,12 +171,8 @@ methods
 				this.feature_matrix(save_indices, c) = (1 - this.LAMBDA)*undifferenced_band_energy + ...
 					this.LAMBDA*this.LP_gain*differenced_band_energy;
 			end
-			
 		end
-
-
 	end
-
 
 	function plot_sample_intermediate_data(this, sample_frames)
 		for frame = sample_frames
@@ -205,4 +201,4 @@ methods
 	end
 	end
 
-end
+end % methods
