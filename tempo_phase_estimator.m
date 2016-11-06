@@ -66,6 +66,10 @@ properties
 	% rate in order to get a value in seconds.
 	% the second and fourth values are unitless real numbers
 	tempo_phase_estimates;
+
+	% same as tempo_phase_estimates but in units of seconds rather than
+	% samples
+	tempo_phase_estimates_s;
 end
 
 properties (Dependent)
@@ -113,6 +117,7 @@ methods
             2^round(log2(this.feature_sample_rate*this.FEATURE_WIN_TIME_APPROX));
 
 		this.tempo_phase_estimates = cell(this.num_feature_frames, 1);
+		this.tempo_phase_estimates_s = cell(this.num_feature_frames, 1);
 
 		this.min_lag_samples = round(feature_sample_rate*60/this.MAX_BPM_APPROX);
 		this.max_lag_samples = round(feature_sample_rate*60/this.MIN_BPM_APPROX);

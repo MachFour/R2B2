@@ -125,8 +125,9 @@ methods
 			% This could also be done by removing all the zero rows after the
 			% following loop, but I wasn't bothered
 
-			% frame_estimates = zeros(length(tempo_estimates)*this.MAX_PHASE_PEAKS, 4)
 			frame_estimates = zeros(1, 4);
+			% same but in seconds
+			frame_estimates_s = zeros(1, 4);
 			estimate_number = 0;
 
 			for tempo_index = 1:length(curr_tempo_estimates)
@@ -165,19 +166,28 @@ methods
 				% tempo_phase_estimates cell array
 				for phase_index = 1:num_phase_peaks
 					estimate_number = estimate_number + 1;
-					tempo_phase_estimate_tuple = [
+					tp_estimate_tuple = [
 						curr_tempo_estimate, ...
 						curr_tempo_confidence, ...
 						phase_estimates(phase_index), ...
 						phase_confidences(phase_index)
 					];
 
-					frame_estimates(estimate_number, :) = tempo_phase_estimate_tuple;
+					tp_estimate_tuple_s = [
+						curr_tempo_estimate/this.feature_sample_rate, ...
+						curr_tempo_confidence, ...
+						phase_estimates(phase_index)/this.feature_sample_rate, ...
+						phase_confidences(phase_index)
+					];
+
+					frame_estimates(estimate_number, :) = tp_estimate_tuple;
+					frame_estimates_s(estimate_number, :) = tp_estimate_tuple_s;
 
 				end
 			end
 
 			this.tempo_phase_estimates{k} = frame_estimates;
+			this.tempo_phase_estimates_s{k} = frame_estimates_s;
 		end
 	end
 
