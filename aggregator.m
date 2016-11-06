@@ -65,7 +65,11 @@ methods
         n = length(this.tp_data);
     end
     function c = get.tempo_centre_of_mass(this)
-        c = this.centre_of_mass(this.tempo_cluster_set, this.TEMPO_INDEX);
+        if ~isempty(this.tempo_cluster_set)
+            c = this.centre_of_mass(this.tempo_cluster_set, this.TEMPO_INDEX);
+        else 
+            c = 0;
+        end
     end
     
     % === HELPER FUNCTIONS ===
@@ -277,18 +281,20 @@ methods
             for j=1:length(this.tempo_harmonics)
                 top_score = 0;
                 for k=1:this.num_features
-                    feature_data = this.tempo_cluster_set{this.tempo_harmonics(i)}{k}.tempo_phase_estimates{this.frame};
-                    sz = size(feature_data);
-                    for m=1:sz(1)
-                        cluster_seed = feature_data(m,:);
-                        cluster = this.phase_query(cluster_seed, this.tempo_harmonics(j), i);
-                        
-                        % we rank each cluster by their global confidence
-                        % and keep only the largest
-                        curr_score = this.get_sum(cluster, this.CONFIDENCE_INDEX);
-                        if curr_score > top_score
-                            top_score = curr_score;
-                            this.phase_cluster_matrix{i, j} = cluster;
+                    if ~isempty(this.tempo_cluster_set)
+                        feature_data = this.tempo_cluster_set{this.tempo_harmonics(i)}{k}.tempo_phase_estimates{this.frame};
+                        sz = size(feature_data);
+                        for m=1:sz(1)
+                            cluster_seed = feature_data(m,:);
+                            cluster = this.phase_query(cluster_seed, this.tempo_harmonics(j), i);
+
+                            % we rank each cluster by their global confidence
+                            % and keep only the largest
+                            curr_score = this.get_sum(cluster, this.CONFIDENCE_INDEX);
+                            if curr_score > top_score
+                                top_score = curr_score;
+                                this.phase_cluster_matrix{i, j} = cluster;
+                            end
                         end
                     end
                 end
@@ -366,18 +372,24 @@ methods
                     % we take the ratio of a tempo clusters total
                     % confidence and the confidence of the phase harmonic
                     % sub-cluster
-                    weighted_cluster_confidence = weighted_cluster_confidence...
-                        + this.tempo_harmonics(j)*this.get_sum(...
-                        this.phase_cluster_matrix{j,i},...
-                        this.CONFIDENCE_INDEX)/this.get_sum(...
-                        this.tempo_cluster_set{j},...
-                        this.CONFIDENCE_INDEX);
+                    if ~isempty(this.tempo_cluster_set)
+                        weighted_cluster_confidence = weighted_cluster_confidence...
+                            + this.tempo_harmonics(j)*this.get_sum(...
+                            this.phase_cluster_matrix{j,i},...
+                            this.CONFIDENCE_INDEX)/this.get_sum(...
+                            this.tempo_cluster_set{j},...
+                            this.CONFIDENCE_INDEX);
+                    end
                 end
             end
 
             % we need the 1 here otherwise the fundamental gets no score
             % ever...
-            this.evidence_list(i) = (1 + weighted_cluster_confidence)*this.get_sum(this.tempo_cluster_set{i}, this.CONFIDENCE_INDEX);
+            if ~isempty(this.tempo_cluster_set)
+                this.evidence_list(i) = (1 + weighted_cluster_confidence)*this.get_sum(this.tempo_cluster_set{i}, this.CONFIDENCE_INDEX);
+            else 
+                this.evidence_list(i) = 0;
+            end
         end
     end
     

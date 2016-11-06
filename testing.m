@@ -1,5 +1,5 @@
 % this is just the guts of r2b2 plus some extras for easy use
-audio_filename  = 'mollasses.wav';
+audio_filename  = 'siarus.wav';
 audio_directory = 'aggregation_old/test_songs'; 
 
 audio_file_path = strcat(audio_directory, '/', audio_filename);
@@ -49,10 +49,11 @@ a.plot_phase_cluster_sets();
 
 %% CHOOSING A WINNER
 a.test_aggregator.collect_evidence();
-display(a.test_aggregator.evidence_list);
+%display(a.test_aggregator.evidence_list);
 
-%% PLOTTING TEMPO VS FRAME NO
+%% PLOTTING TEMPO VS FRAME NO AND THE WINNING PHASE
 tempos = [];
+phases = [];
 for i=1:length(tp_estimator{1}.tempo_phase_estimates)
     a = aggregator_demo;
     a.initialise(tp_estimator, i);
@@ -62,8 +63,78 @@ for i=1:length(tp_estimator{1}.tempo_phase_estimates)
     
     a.test_aggregator.collect_evidence();
     index = find(a.test_aggregator.evidence_list==max(a.test_aggregator.evidence_list));
-    tempo = a.test_aggregator.tempo_centre_of_mass/a.test_aggregator.tempo_harmonics(index);
-    tempo = 60/(tempo/a.sample_rate);
+    if length(index) > 1
+        tempo = 0;
+    else    
+        tempo = a.test_aggregator.tempo_centre_of_mass/a.test_aggregator.tempo_harmonics(index);
+        tempo = 60/(tempo/a.sample_rate);
+    end
     tempos = [tempos, tempo];
+    
+    % now we get the phase!
+    top_score = 0;
+    for j=1:a.test_aggregator.num_features
+        cluster_sum = 0;
+        if length(index) == 1
+            cluster_sum = a.test_aggregator.get_sum(a.test_aggregator.phase_cluster_matrix{index,j}, 4);
+        end
+        if cluster_sum > top_score
+            top_score = cluster_sum;
+            phase_index = j;
+        end
+    end
+    
+    % now we take a weighted mean of the phases in that sub-sub-cluster
+    %weighted_phases = [];
+    %for k = 1:a.test_aggregator.num_features
+    %    if length(index) == 1
+    %        sz = size(a.test_aggregator.phase_cluster_matrix{index,phase_index}{k}.tempo_phase_estimates{i});
+    %        for j = 1:sz(1)
+    %            feature_data = a.test_aggregator.phase_cluster_matrix{index,phase_index}{k}.tempo_phase_estimates{i};
+    %            if ~isempty(feature_data)
+    %                weighted_phases = [weighted_phases, feature_data(j, 3)*feature_data(j, 4)];
+    %            end
+    %        end
+    %    else
+    %        weighted_phases = [weighted_phases, 0];
+    %    end
+    %end
+    %if top_score == 0
+    %    top_score = 1;
+    %    weighted_phases = 0*weighted_phases;
+    %end
+    
+    % in this approach we just take the most confident phase of the group
+    top_score = 0;
+    winning_phase = 0;
+    for k=1:a.test_aggregator.num_features
+        if length(index) == 1
+            sz = size(a.test_aggregator.phase_cluster_matrix{index,phase_index}{k}.tempo_phase_estimates{i});
+            for j = 1:sz(1)
+                feature_data = a.test_aggregator.phase_cluster_matrix{index,phase_index}{k}.tempo_phase_estimates{i};
+                if ~isempty(feature_data)
+                    if feature_data(j, 4) > top_score
+                        top_score = feature_data(j, 4);
+                        winning_phase = feature_data(j, 3);
+                    end
+                end
+            end
+        end
+    end
+    
+    %winning_phase = sum(weighted_phases/top_score); % we take the weigthed mean
+    phases = [phases, winning_phase/(a.sample_rate)];
 end
 scatter(1:length(tempos), tempos, 'b');
+
+%% WRITE TO ANNOTATION FILE...
+filename = 'siarus.txt';
+outfile = fopen(filename, 'w+');
+for i=1:length(tempos) % or in otherwords, the number of 'windows'
+    curr_tempo_period = 60/tempos(i); % tempos is in bpm
+    num_beats = floor(5.94*0.125/curr_tempo_period);
+    for j=1:num_beats
+        curr_beat_time = 5.94 + (i - 1)*5.94*0.125 + j*curr_tempo_period + phases(i);
+        fprintf(outfile, '%.3f\n', curr_beat_time);
+    end
+end
