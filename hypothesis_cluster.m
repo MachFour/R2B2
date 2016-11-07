@@ -85,13 +85,13 @@ methods
             end
             % initialise the tempo clusters
             this.t_clusters{j} = tp_cluster;
-            this.t_clustesr{j}.initialise(num_features);
+            this.t_clusters{j}.initialise(num_features);
         end
         
         this.P_p_given_t_at_h = zeros(this.n);
         
         this.cluster_by_tempo(data_window);
-        this.cluster_by_phase(tempo_clustering);
+        this.cluster_by_phase();
     end
     
     % ==== getters ====
@@ -105,7 +105,7 @@ methods
         weighted_sum = 0; 
         sum_of_confs = 0;
         
-        for i = this.n
+        for i = 1:this.n
             h = this.harmonics(i);
             for j=this.t_clusters{i}.non_empty_features
                 feature_data = this.t_clusters{i}.tp_ests{j};
@@ -121,7 +121,7 @@ methods
         s = [];
         for i=1:this.n
             if ~isempty(this.t_clusters{i}.non_empty_features)
-                s = [s; i];
+                s = [s, i];
             end
         end
     end
@@ -167,7 +167,7 @@ methods
                     end
                     if curr_score > top_score
                         top_score = curr_score;
-                        this.t_clusters = test_cluster_set;
+                        this.t_clusters = clusters;
                     end
                 end
                 
@@ -193,7 +193,7 @@ methods
         end
     
         for i=1:this.n_f % iterate over all features
-            curr_feature_data = tempo_window;
+            curr_feature_data = tempo_window{i};
             sz = size(curr_feature_data);
             for j=1:sz(1) % iterate over all estimates
                 curr_point = curr_feature_data(j,:);
@@ -231,15 +231,14 @@ methods
     % P_p_given_t_at_h
     function cluster_by_phase(this)        
         for i=this.non_empty_t_clusters % iterate over non-empty tempo harmonics
-            h = this.harmonics(i);
             % now we check phase harmonics at tempo harmonic i
             for j=this.non_empty_t_clusters 
                 if i + j <= this.n + 1  % keeping it triangular
                     top_score = 0; % for updating the winner
                     
-                    for k=this.t_clusters.non_empty_features
-                        for m=1:this.t_clusters.n_pts(k)
-                            cluster_seed = this.t_clusters{h}.get_point(k, m);
+                    for k=this.t_clusters{i}.non_empty_features
+                        for m=1:this.t_clusters{i}.n_pts(k)
+                            cluster_seed = this.t_clusters{i}.get_point(k, m);
                             
                             % phase offset is the spacing allowed between
                             % phase points in the same epsilon ball in the
@@ -282,8 +281,7 @@ methods
         phase_data = this.t_clusters{i_tempo_harmonic};
         
         for i=phase_data.non_empty_features % iterate over each feature
-            sz = size(curr_feature_data);
-            for j=1:sz(1) % iterate over all estimates
+            for j=1:phase_data.n_pts(i) % iterate over all estimates
                 curr_point = phase_data.get_point(i, j);
                 
                 % here we only want to look at points that are further down
@@ -292,11 +290,11 @@ methods
                     % compute the actual number of levels that we need to
                     % check
                     num_pts = ceil((cluster_seed(this.P_I) - ...
-                        phase_data.min_phase)/offset);
-                    d = d_phi(curr_point(this.P_I), cluster_seed(this.P_I),...
-                        num_pts, phase_offset);
+                        phase_data.min_phase)/phase_offset);
+                    d = this.d_phi(curr_point(this.P_I), ...
+                        cluster_seed(this.P_I), num_pts, phase_offset);
                     if d < this.eps_phase/2 % is it in the epsilon ball?
-                        cluster{i} = [cluster{i}; curr_point];
+                        cluster.add_point(i, curr_point);
                     end
                 end
             end
@@ -305,7 +303,7 @@ methods
     
     % this is the metric that we use to compute the distance between two
     % phase points modulo the offset
-    function dist = d_phi(y, y_ref, num_pts, offset)  
+    function dist = d_phi(this, y, y_ref, num_pts, offset)  
         h = 0:(num_pts - 1);
         dist = min(abs(y + h*offset - y_ref));
     end

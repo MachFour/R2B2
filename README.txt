@@ -19,7 +19,7 @@ one or several dimensions of data over time
 tempo_phase_estimator - for something that takes in (single dimensional)
 feature data and creates several tempo and phase estimates at regular intervals
 
-beat_predictor [planned] - for something that takes in tempo and phase estimates
+beat_predictor - for something that takes in tempo and phase estimates
 over time, aggregates them, and predicts a single most likely future beat time
 
 Concrete classes:
@@ -33,9 +33,13 @@ in a frame of features, finds phase by sliding set of equally spaced impulses
 along the feature frame, and choosing the amount of shift that maximises their
 dot product
 
+tpe_autocorrelation2 -
+Also performs autocorrelation-based tempo detection, but using a different method
+of autocorrelation
+
 Helper functions:
 
 autocorrelation.m - Calculates autocorrelation
-autocorrelation_comb.m - alternative way to peak picking autocorrelation
+autocorrelation2.m - Calculates autocorrelation in a better way
 mel_filter.m - for klapuri's feature, and also MFCC calculation (later)
 beat_alignment_function.m - for phase calculation

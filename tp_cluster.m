@@ -46,13 +46,13 @@ methods
     function initialise(this, num_features)
         this.n_f        = num_features;
         this.tp_ests    = cell(this.n_f, 1);
-        this.n_pts      = zeros(this.n_f, 1);
+        this.n_pts      = zeros(1, this.n_f);
     end
 
     % ==== getters ====
     function c = get.min_conf(this)
         confs = zeros(this.n_f, 1);
-        for i=1:this.n_f
+        for i=this.non_empty_features
             confs(i) = min(this.tp_ests{i}(:, this.C_I));
         end
         c = min(confs);
@@ -60,7 +60,7 @@ methods
     
     function c = get.max_conf(this)
         confs = zeros(this.n_f, 1);
-        for i=1:this.n_f
+        for i=this.non_empty_features
             confs(i) = max(this.tp_ests{i}(:, this.C_I));
         end
         c = max(confs);
@@ -68,7 +68,7 @@ methods
     
     function c = get.tot_conf(this)
         confs = zeros(this.n_f, 1);
-        for i=1:this.n_f
+        for i=this.non_empty_features
             confs(i) = sum(this.tp_ests{i}(:, this.C_I));
         end
         c = sum(confs);
@@ -76,7 +76,7 @@ methods
     
     function p = get.min_phase(this)
         phases = zeros(this.n_f, 1);
-        for i=1:this.n_f
+        for i=this.non_empty_features
             phases(i) = min(this.tp_ests{i}(:, this.P_I));
         end
         p = min(phases);
@@ -84,7 +84,7 @@ methods
     
     function p = get.max_phase(this)
         phases = zeros(this.n_f, 1);
-        for i=1:this.n_f
+        for i=this.non_empty_features
             phases(i) = max(this.tp_ests{i}(:, this.P_I));
         end
         p = max(phases);
@@ -92,7 +92,7 @@ methods
 
     function t = get.min_tempo(this)
         phases = zeros(this.n_f, 1);
-        for i=1:this.n_f
+        for i=this.non_empty_features
             phases(i) = min(this.tp_ests{i}(:, this.T_I));
         end
         t = min(phases);
@@ -100,7 +100,7 @@ methods
     
     function t = get.max_tempo(this)
         phases = zeros(this.n_f, 1);
-        for i=1:this.n_f
+        for i=this.non_empty_features
             phases(i) = max(this.tp_ests{i}(:, this.T_I));
         end
         t = max(phases);

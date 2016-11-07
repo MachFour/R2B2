@@ -5,6 +5,8 @@
 % Handles windowing and signal processing of data, and so the relevant parameters
 % are properties of this class
 
+% Author: Max Fisher
+
 % Most likely all the features we will use are onset detection functions, i.e.
 % they have a peak where a 'significant event' is in the music.
 % Three features are planned for implementation:
@@ -78,7 +80,7 @@ properties (Dependent)
 
 	% effective sampling rate of the feature measurement, in Hz
 	feature_sample_rate;
-	
+
 	% how many feature samples are calculated
 	feature_data_length;
 
@@ -88,8 +90,8 @@ properties (Abstract)
 	% dimensionality of the computed feature, i.e.
 	% how many columns in the feature matrix
 	num_feature_channels;
-	
-	
+
+
 	% some features (Klapuri's) are upsampled to provide a better
 	% resolution when calculating autocorrelations.
 	% upsample factor is stored here
@@ -108,7 +110,7 @@ methods
 		this.audio_sample_rate = audio_sample_rate;
 		% make the actual window length a power of 2
 		this.audio_win_length = ...
-            2^round(log2(audio_sample_rate*this.AUDIO_WIN_TIME_APPROX));
+			2^round(log2(audio_sample_rate*this.AUDIO_WIN_TIME_APPROX));
 
 		this.window_function = window(this.AUDIO_WIN_TYPE, this.audio_win_length);
 

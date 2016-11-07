@@ -6,9 +6,15 @@
 % exactly where the beats lie, but obviously this is unattainable
 % in reality
 
+% Author: Max Fisher
+
 classdef (Abstract) tempo_phase_estimator < handle
 
 properties (Constant)
+	% BPM ranges to allow when detecting tempo
+	MIN_BPM_APPROX = 40;
+	MAX_BPM_APPROX = 240;
+
 	% minimum length of audio to use for tempo estimation at each time point (seconds)
 	% actual length of feature frames will be power of 2 closest to this.
 	FEATURE_WIN_TIME_APPROX = 5; %seconds
@@ -40,9 +46,12 @@ properties
 	% power of 2
 	feature_win_length;
 
-	% BPM ranges to allow when detecting tempo
-	min_bpm = 40;
-	max_bpm = 240;
+
+	% BPM ranges translated to autocorrelation time lag (samples)
+	% derived from {min,max}_bpm_approx respectively, and the feature
+	% sampling rate. Rounded to the nearest integer, of course.
+	max_lag_samples;
+	min_lag_samples;
 
 	% tempo and beat phase estimates for each feature frame analysed
 	% these are cell arrays: the n'th index of each contains a list of tuples
@@ -57,14 +66,26 @@ properties
 	% rate in order to get a value in seconds.
 	% the second and fourth values are unitless real numbers
 	tempo_phase_estimates;
+
+	% same as tempo_phase_estimates but in units of seconds rather than
+	% samples
+	tempo_phase_estimates_s;
 end
 
 properties (Dependent)
 	% BPM ranges translated to autocorrelation time lag (seconds)
-	% max lag needs to also be smaller than the frame time divided by 4, for
-	% the tempo strength function to work properly
+	% these are equivalent to {max,min}_lag*feature_sample_rate,
 	max_lag;
 	min_lag;
+
+	% recomputed min and max bpm after rounding to nearest sample
+	min_bpm;
+	max_bpm;
+
+	% range of allowable tempos (in samples)
+	% this is simply min_lag_samples:max_lag_samples
+	% used to e.g. limit range of peak picking in autocorrelation
+	tempo_lag_range;
 
 	% corresponding time of feature window
 	feature_win_time;
@@ -73,7 +94,6 @@ properties (Dependent)
 
 	num_feature_frames;
 
-
 	% How often tempo and phase is (re)estimated on
 	% a new frame of features. Given a fixed feature_sample_rate,
 	% this is inversely proportional to feature_hop_size
@@ -81,11 +101,15 @@ properties (Dependent)
 
 	% useful for translating between samples and time
 	feature_time_axis;
+
 end
 
 methods
 	function initialise(this, feature_data, feature_sample_rate, estimator_name)
 		this.estimator_name = estimator_name;
+		if size(feature_data, 2) ~= 1
+			error('feature_data cant be a matrix');
+		end
 		this.feature_data = feature_data;
 		this.feature_sample_rate = feature_sample_rate;
 		% make the actual window length a power of 2
@@ -93,15 +117,30 @@ methods
             2^round(log2(this.feature_sample_rate*this.FEATURE_WIN_TIME_APPROX));
 
 		this.tempo_phase_estimates = cell(this.num_feature_frames, 1);
+		this.tempo_phase_estimates_s = cell(this.num_feature_frames, 1);
+
+		this.min_lag_samples = round(feature_sample_rate*60/this.MAX_BPM_APPROX);
+		this.max_lag_samples = round(feature_sample_rate*60/this.MIN_BPM_APPROX);
 	end
 
 	% getters for dependent properties
 	function l = get.max_lag(this)
-		l = 60/this.min_bpm;
+		l = this.max_lag_samples/this.feature_sample_rate;
 	end
+	function b = get.min_bpm(this)
+		b = 60/this.max_lag;
+	end
+
 	function l = get.min_lag(this)
-		l = 60/this.max_bpm;
+		l = this.min_lag_samples/this.feature_sample_rate;
 	end
+	function b = get.max_bpm(this)
+		b = 60/this.min_lag;
+	end
+	function r = get.tempo_lag_range(this)
+		r = this.min_lag_samples:this.max_lag_samples;
+	end
+
 	function t = get.feature_win_time(this)
 		t = this.feature_win_length/this.feature_sample_rate;
 	end
@@ -126,6 +165,12 @@ methods
 		if length(feature_frame) < this.feature_win_length
 			feature_frame(length(feature_frame+1):this.feature_win_length) = 0;
 		end
+	end
+
+	% returns the time when frame k ends, in seconds
+	% first frame ends at this.feature_win_time
+	function time = get_frame_end_time(this, k)
+		time = this.feature_win_time + (k-1)/this.estimate_update_rate;
 	end
 
 	function print_properties(this)
@@ -156,7 +201,6 @@ methods
 			% set time for estimate estimates from frame k
 			% to be at the end of that frame
 			% so first frame's estimates correspond to FEATURE_TIME
-			frame_time = this.feature_win_time + (k-1)/this.estimate_update_rate;
 			curr_tp_estimates = this.tempo_phase_estimates{k};
 			for estimate_index = 1:size(curr_tp_estimates, 1)
 				% tempo and alignment are expresseed in samples,
@@ -168,7 +212,7 @@ methods
 
 				fprintf(outfile, output_format_string, ...
 					k, ...
-					frame_time, ...
+					get_frame_end_time(k), ...
 					est_tempo/this.feature_sample_rate, ...
 					est_tempo_confidence, ...
 					est_phase/this.feature_sample_rate, ...

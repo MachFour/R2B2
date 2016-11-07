@@ -11,53 +11,23 @@ properties (Constant)
     COLOURS     = {'r', 'g', 'b', 'c', 'm', 'y', 'k', 'w'};
     % for plotting: point styles are used to distinguish features only
     POINT_STYLE = {'+', 'o', '*', 'x', 's', 'd', '^', '>', '<'};
+    
+    sample_rate = 172; % update properly
 end
 
-properties
-    % for testing purposes
-    test_frame; 
-    
-    % for plotting (comes from max...)
-    sample_rate; % in Hz
-    
-    test_aggregator;
-end
-
-methods
-	function initialise(this, tp_data, test_frame)
-        this.test_aggregator = aggregator; 
-		this.test_aggregator.initialise(tp_data, test_frame);
-        
-        this.sample_rate = tp_data{1}.feature_sample_rate;
-        this.test_frame = test_frame;
-    end
-
-    function plot_tempo_phase_data(this)
-        hold on
-        for i = 1:this.test_aggregator.num_features
-            feature_data = this.test_aggregator.tp_data{i}.tempo_phase_estimates{this.test_frame};
-            if ~isempty(feature_data)
-                tempos = feature_data(:,this.test_aggregator.TEMPO_INDEX)/this.sample_rate;
-                phases = feature_data(:,this.test_aggregator.PHASE_INDEX)/this.sample_rate;
-                scatter(tempos, phases, this.POINT_STYLE{i}, 'k');
-            end
-        end
-        hold off
-    end
-    
+methods    
     function plot_cluster_set(this, cluster_set, phases)
         hold on
         for i = 1:length(cluster_set)
-            for j = 1:this.test_aggregator.num_features
-                feature_data = cluster_set{i}{j}.tempo_phase_estimates{this.test_frame};
-                if ~isempty(feature_data)
+            if ~isempty(cluster_set{i})
+                for j=cluster_set{i}.non_empty_features 
+                    feature_data = cluster_set{i}.tp_ests{j};
                     if phases 
-                        sz = size(feature_data);
-                        tempos = 0.02*i + feature_data(:,this.test_aggregator.TEMPO_INDEX)/this.sample_rate;
+                        tempos = 0.02*i + feature_data(:,cluster_set{i}.T_I)/this.sample_rate;
                     else
-                        tempos = feature_data(:,this.test_aggregator.TEMPO_INDEX)/this.sample_rate;
+                        tempos = feature_data(:,cluster_set{i}.T_I)/this.sample_rate;
                     end
-                    phases = feature_data(:,this.test_aggregator.PHASE_INDEX)/this.sample_rate;
+                    phases = feature_data(:,cluster_set{i}.P_I)/this.sample_rate;
                     scatter(tempos, phases, this.POINT_STYLE{j}, this.COLOURS{i});
                 end
             end
@@ -65,6 +35,7 @@ methods
         hold off
     end
     
+    % not fixed...
     function plot_cluster(this, cluster, colour)
         hold on
         for i = 1:this.test_aggregator.num_features
@@ -78,18 +49,25 @@ methods
         hold off
     end
     
-    function plot_tempo_clustering_demo(this)
-        t = this.test_aggregator.tempo_cluster_set;
-        for i=1:length(this.test_aggregator.tempo_harmonics)
-            t{i} = this.test_aggregator.zero_out_data(this.test_aggregator.tempo_cluster_set{i}, ...
-                this.test_aggregator.PHASE_INDEX);
+    function plot_tempo_clustering_demo(this, hypothesis_cluster, window)
+        figure 
+      
+        % zero out the phases
+        h = hypothesis_cluster;
+        for i=h.non_empty_t_clusters
+            for j=h.t_clusters{i}.non_empty_features
+                for k=1:h.t_clusters{i}.n_pts(j)
+                    h.t_clusters{i}.tp_ests{j}(k,h.P_I) = 0;
+                end
+            end
         end
         
+        % plot all the data points on a number line
         hold on
-        for i = 1:this.test_aggregator.num_features
-            feature_data = this.test_aggregator.tp_data{i}.tempo_phase_estimates{this.test_frame};
+        for i=1:h.n_f 
+            feature_data = window{i};
             if ~isempty(feature_data)
-                tempos = feature_data(:,this.test_aggregator.TEMPO_INDEX)/this.sample_rate;
+                tempos = feature_data(:,h.T_I)/this.sample_rate;
                 sz = size(feature_data);
                 phases = zeros(sz(1), 1);
                 scatter(tempos, phases, this.POINT_STYLE{i}, 'k');
@@ -97,34 +75,29 @@ methods
         end
         hold off
         
-        this.plot_cluster_set(t, false);
+        this.plot_cluster_set(h.t_clusters, false);
         
         hold on
-            x = this.test_aggregator.centre_of_mass(this.test_aggregator.tempo_cluster_set,...
-                this.test_aggregator.TEMPO_INDEX)/this.sample_rate;
-            eps = this.test_aggregator.eps_tempo;
-            for h=this.test_aggregator.tempo_harmonics
-                line([x/h, x/h],[-0.1, 0.1], 'Color', 'Green');
-                line([x/h + eps/(2*h*this.sample_rate), ...
-                    x/h + eps/(2*h*this.sample_rate)],[-0.05, 0.05], 'Color', 'Red');
-                line([x/h - eps/(2*h*this.sample_rate), ...
-                    x/h - eps/(2*h*this.sample_rate)],[-0.05, 0.05], 'Color', 'Red');
-            end
+        x = h.tempo_c_o_m/this.sample_rate;
+        eps = h.eps_tempo;
+        for i=h.non_empty_t_clusters
+            k = h.harmonics(i);
+            line([x/k, x/k],[-0.1, 0.1], 'Color', 'Green');
+            line([x/k + eps/(2*k*this.sample_rate), ...
+                x/k + eps/(2*k*this.sample_rate)],[-0.05, 0.05], 'Color', 'Red');
+            line([x/k - eps/(2*k*this.sample_rate), ...
+                x/k - eps/(2*k*this.sample_rate)],[-0.05, 0.05], 'Color', 'Red');
+        end
         hold off
     end
     
-    function plot_phase_cluster_sets(this)
-        for i=1:length(this.test_aggregator.tempo_harmonics)
-            hold on
-            this.plot_cluster_set({this.test_aggregator.phase_cluster_matrix{i,:}}, true);
-            hold off
-
-            %display(i);
-            %this.test_aggregator.print_points_in_cluster_set({this.test_aggregator.phase_cluster_matrix{i,:}});
-            
-            %x = this.test_aggregator.centre_of_mass({this.test_aggregator.phase_cluster_matrix{i,:}}, this.test_aggregator.PHASE_INDEX);
-            %line([0.3,1.3], [x/this.sample_rate,x/this.sample_rate], 'Color', 'green');
+    function plot_phase_cluster_sets(this, hypothesis_cluster)
+        figure
+        hold on
+        for i=hypothesis_cluster.non_empty_t_clusters
+            this.plot_cluster_set(hypothesis_cluster.tp_matrix(:,i), true);
         end
+        hold off
     end
 end % methods
 

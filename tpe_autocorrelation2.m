@@ -1,18 +1,23 @@
+
 % Class that performs tempo and phase estimation from a single dimensional
 % feature, by using autocorrelation to detect likely periodicities (i.e.
 % possible tempos), and then for each of those, using a sequence of impulses
 % spaced at that tempo period to locate where the periodic peaks of the
 % feature actually are (i.e. the beat phase)
 
+% uses the second type of autocorrelation function which slides
+% half the feature frame back over the other half
+
 % Author: Max Fisher
 
-classdef tpe_autocorrelation < tempo_phase_estimator
+classdef tpe_autocorrelation2 < tempo_phase_estimator
 
 properties (Constant)
 	% how many peaks to pick from the autocorrelation function, per frame
-	MAX_TEMPO_PEAKS = 4;
+	MAX_TEMPO_PEAKS = 8;
 	% how many peaks to pick from the beat alignment (phase) function, per frame
 	MAX_PHASE_PEAKS = 4;
+
 
 	% the maximum total number of tempo/phase estimates for each feature
 	% frame is given by MAX_TEMPO_PEAKS*MAX_PHASE_PEAKS
@@ -32,20 +37,7 @@ end
 methods
 	function initialise(this, feature_data, feature_sample_rate, estimator_name)
 		initialise@tempo_phase_estimator(this, feature_data, feature_sample_rate, estimator_name);
-		% there needs to be a margin between 4*feature_win_time and max_lag,
-		% since at the end of the unbiased autocorrelation function, the amplitude goes
-		% up artificially. When using 4 equally spaced impulses at a given lag
-		% to measure the periodicity (autocorrelation comb), at higher lags the 4th
-		% impulse will pass through this artifically high zone. So we limit max_lag.
-		if this.max_lag_samples > this.feature_win_length/4 - 30
-			warning('Reduced maximum lag to be 30 samples less than feature_win_length/4');
-			this.max_lag_samples = this.feature_win_length/4 - 30;
-			fprintf('New min_bpm: %3.2f BPM\n', this.min_bpm);
-			fprintf('New max_lag: %3.2f s\n', this.max_lag);
-
-		end
-
-		this.autocorrelation_data = zeros(this.num_feature_frames, this.feature_win_length);
+		this.autocorrelation_data = zeros(this.num_feature_frames, this.feature_win_length/2);
 	end
 
 	function print_properties(this)
@@ -67,34 +59,39 @@ methods
 		for k = 1:this.num_feature_frames
 
 			% go through and calculate autocorrelations for each slice of
-			% FEATURE_LENGTH detection function features
-			% no windowing so far
+			% this.feature_win_length
+
+			% we use the new method of autocorrelation
 
 			% it's a column vector
 			curr_feature_frame = this.get_feature_frame(k);
-			this.autocorrelation_data(k, 1:this.feature_win_length) = ...
-				autocorrelation(curr_feature_frame);
+			first_half = curr_feature_frame(1:this.feature_win_length/2);
+			second_half = curr_feature_frame(this.feature_win_length/2+1:end);
+
+			acf2 = autocorrelation2(second_half, first_half);
+			this.autocorrelation_data(k, :) = acf2;
 
 			% now pick peaks!
 			% make sure to correct for 1-indexing in arrays
-			acf_data_in_tempo_range = this.autocorrelation_data(k, this.tempo_lag_range+1);
 
 			% note that there may be peaks at smaller lag than MAX_BPM that reflect the tatum
 			% (semiquaver/quaver) pulse
-			% find peaks until confidence is within a certain ratio of the highest?
-			% MinPeakProminence: necessary vertical descent on both sides in order to count as
-			% a peak
-			% MinPeakDistance: horizonal separation between peaks.
 
+			% MinPeakProminence: necessary vertical descent on both sides 
+			% in order to count as a peak
+			% since all values are less than 1, we make this 0.025
+
+			% MinPeakDistance: horizonal separation between peaks
+			% -> make it equivalent to 2x the maximum allowed tempo
+
+			% don't sort in descending order: find faster tempos first
 			[curr_tempo_confidences, curr_tempo_estimates]  = ...
-				findpeaks(acf_data_in_tempo_range,  ...
-					this.tempo_lag_range, ...
-					'MinPeakProminence', 0.05, ...
+				findpeaks(this.autocorrelation_data(k, :),  ...
+					0:this.feature_win_length/2-1, ...
 					'MinPeakDistance', this.min_lag_samples/2, ...
-					'MinPeakHeight', 0, ...
+					'MinPeakProminence', 0.025, ...
 					'NPeaks', this.MAX_TEMPO_PEAKS, ...
 					'SortStr', 'descend');
-			% remove peak at 0, and peaks with confidence below 0.
 
 			% intermediate storage of tempo estimates
 			% (storing the transpose of the two lists is equivalent to storing each
@@ -128,8 +125,9 @@ methods
 			% This could also be done by removing all the zero rows after the
 			% following loop, but I wasn't bothered
 
-			% frame_estimates = zeros(length(tempo_estimates)*this.MAX_PHASE_PEAKS, 4)
 			frame_estimates = zeros(1, 4);
+			% same but in seconds
+			frame_estimates_s = zeros(1, 4);
 			estimate_number = 0;
 
 			for tempo_index = 1:length(curr_tempo_estimates)
@@ -141,7 +139,7 @@ methods
 				% then slide it along the detection function for one tempo period,
 				% to find where it lines up the best
 				% feature needs to be a column vector
-				
+
 				alignment_function = ...
 					beat_alignment_function(curr_feature_frame, curr_tempo_estimate);
 
@@ -151,7 +149,6 @@ methods
 				[phase_confidences, phase_estimates]  = ...
 					findpeaks(alignment_function, ...
 						0:curr_tempo_estimate-1, ...
-						'MinPeakHeight', 0.01, ...
 						'MinPeakDistance', curr_tempo_estimate/8, ...
 						'NPeaks', this.MAX_PHASE_PEAKS, ...
 						'SortStr', 'descend');
@@ -169,19 +166,28 @@ methods
 				% tempo_phase_estimates cell array
 				for phase_index = 1:num_phase_peaks
 					estimate_number = estimate_number + 1;
-					tempo_phase_estimate_tuple = [
+					tp_estimate_tuple = [
 						curr_tempo_estimate, ...
 						curr_tempo_confidence, ...
 						phase_estimates(phase_index), ...
 						phase_confidences(phase_index)
 					];
 
-					frame_estimates(estimate_number, :) = tempo_phase_estimate_tuple;
+					tp_estimate_tuple_s = [
+						curr_tempo_estimate/this.feature_sample_rate, ...
+						curr_tempo_confidence, ...
+						phase_estimates(phase_index)/this.feature_sample_rate, ...
+						phase_confidences(phase_index)
+					];
+
+					frame_estimates(estimate_number, :) = tp_estimate_tuple;
+					frame_estimates_s(estimate_number, :) = tp_estimate_tuple_s;
 
 				end
 			end
 
 			this.tempo_phase_estimates{k} = frame_estimates;
+			this.tempo_phase_estimates_s{k} = frame_estimates_s;
 		end
 	end
 
@@ -192,8 +198,9 @@ methods
 	% also do a plot of tempo vs phase; plot different tempi on different
 	% subplots
 	function plot_sample_intermediate_data(this, sample_frames)
-		time_axis = this.feature_time_axis;
+
 		for sample_frame = sample_frames
+			time_axis = this.get_frame_end_time(sample_frame) + this.feature_time_axis;
 			if sample_frame > this.num_feature_frames
 				warning('Cant plot sample frame %d; there are only %d feature frames\n', ...
 					sample_frame, this.num_feature_frames);
@@ -205,7 +212,7 @@ methods
 % 			subplot(3, 1, 1);
 
 % 			plot(time_axis, curr_frame);
-% 
+
 % 			title(sprintf('Detection function: t=%3.2f s', ...
 % 				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
 % 			xlabel('Time (seconds)');
@@ -243,38 +250,36 @@ methods
 			% First we pick only the 'most confident' estimates
 			estimates_to_plot = 4;
 
-			% add a column representing some sort of combined confidence of tempo
-			% and phase, and then plot the most confident of these
-
-			phase_confidences = curr_tp_estimates(:, 4);
-
-			combined_confidences = phase_confidences;
-
-			% add this column to the estimate array and sort estimate tuples
-			% by combined confidence, in descending order
-			sorted_estimates = sortrows([curr_tp_estimates, combined_confidences], -5);
+			% sort estimate tuples by phase confidence, in descending order
+			sorted_estimates = sortrows(curr_tp_estimates, -4);
 
 			% Here's where we actually calculate and store the beat locations
-
-			estimated_beat_locs = zeros(length(time_axis), estimates_to_plot);
-
+			% Do it and plot each hypothesised set of beat locations
+			% separately
 			for estimate_idx = 1:min(estimates_to_plot, size(sorted_estimates, 1))
+				subplot(estimates_to_plot, 1, estimate_idx);
+				plot(time_axis, curr_frame);
+				hold on;
+
 				tempo_estimate = sorted_estimates(estimate_idx, 1);
 				phase_estimate = sorted_estimates(estimate_idx, 3);
-				combined_confidence = sorted_estimates(estimate_idx, 5);
+				confidence = sorted_estimates(estimate_idx, 4);
 
 				% calculate beat locations by adding multiples of the tempo
 				% hypothesis to the beat alignment estimate
+				estimated_beat_locs = zeros(length(time_axis), estimates_to_plot);
 				estimated_beat_locs(end+phase_estimate:-tempo_estimate:1, ...
-					estimate_idx) = combined_confidence;
-			end
+					estimate_idx) = confidence;
 
-			plot(time_axis, estimated_beat_locs);
-			hold on; 
-			plot(time_axis, curr_frame);
-			title('Most confident beat locations');
-			xlabel('Time (s)');
-			ylabel('Confidence');
+				plot(time_axis, estimated_beat_locs);
+
+				estimated_period = tempo_estimate/this.feature_sample_rate;
+				estimated_bpm = 60/estimated_period;
+				title(sprintf('Beats: %.1f BPM (%.2f s), confidence = %.2f', ...
+					estimated_bpm, estimated_period, confidence));
+				xlabel('Time (s)');
+				ylabel('Confidence');
+			end
 		end
 	end
 
