@@ -1,4 +1,3 @@
-
 % Class that takes audio data and produces some sort of feature which is used for
 % tempo analysis by a member of the tempo_analyser class
 
@@ -66,10 +65,6 @@ properties
 	window_function;
 end
 
-%
-% These properties are derived entirely from those above, and so cannot 
-% be directly set
-%
 properties (Dependent)
 	% actual duration of each audio window, after window length has been fixed
 	audio_win_time;
@@ -84,7 +79,7 @@ properties (Dependent)
 	% how many feature samples are calculated
 	feature_data_length;
 
-end;
+end % properties (Dependent)
 
 properties (Abstract)
 	% dimensionality of the computed feature, i.e.
@@ -96,7 +91,8 @@ properties (Abstract)
 	% resolution when calculating autocorrelations.
 	% upsample factor is stored here
 	feature_upsample_factor;
-end;
+
+end % properties (Abstract)
 
 methods
 	% gives the instance its audio. Audio windowing could potentially
@@ -185,7 +181,23 @@ methods
 			end
 		end
 	end
-end
+
+	% plots the computed feature across the range of audio
+	% multi-dimensional features are plotted in multiple subplots
+	function plot_feature(this)
+		figure;
+		for c = 1:this.num_feature_channels
+			feature_data_c = this.feature_matrix(:, c);
+			time_axis = (1:length(feature_data_c))/this.feature_sample_rate;
+			subplot(this.num_feature_channels, 1, c);
+			plot(time_axis, feature_data_c);
+			xlabel('Time (s)');
+			ylabel(sprintf('%s (ch %d)', this.feature_name, c));
+		end
+	end
+
+
+end % methods
 
 methods (Abstract)
 	% returns a matrix of feature values over time, with rows indexing time/frames,
@@ -198,6 +210,7 @@ methods (Abstract)
 	% plots some intermediate processing data as computed for each frame in sample_frames
 	% e.g the power spectrum of the sample frame
 	plot_sample_intermediate_data(this, sample_frames);
-end
 
-end
+end % methods (Abstract)
+
+end % classdef (Abstract)
