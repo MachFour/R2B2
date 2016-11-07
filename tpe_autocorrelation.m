@@ -1,4 +1,3 @@
-
 % Class that performs tempo and phase estimation from a single dimensional
 % feature, by using autocorrelation to detect likely periodicities (i.e.
 % possible tempos), and then for each of those, using a sequence of impulses
