@@ -7,22 +7,19 @@
 
 classdef odf_klapuri < feature_extractor
 
-properties (Constant)
+properties
     % low pass filter for interpolating the log magnitude spectrum
-	LP_CUTOFF_FREQ = 10; %Hz
-	LP_ORDER = 6;
+	lp_cutoff_freq = 10; %Hz
+	lp_order = 6;
 
-	NUM_MEL_FILTERS = 36;
+	num_mel_filters = 36;
 
 	% parameter for log-compression
-	MU = 100;
+	mu = 100;
 
 	% parameter for weighted sum of differenced feature with non-differenced
-	LAMBDA = 0.8;
+	lambda = 1;
 
-end % properties (Constant)
-
-properties
 	num_feature_channels = 4;
 
     % following Klapuri, we double the feature rate by interpolating
@@ -33,7 +30,7 @@ properties
 	processed_band_energy;
 
 	% Mel filterbank: used for MFCC's and also for Klapuri's features
-	% returns a NUM_MEL_FILTERS*AUDIO_WIN_LENGTH/2 size matrix,
+	% returns a num_mel_filters*AUDIO_WIN_LENGTH/2 size matrix,
 	% perfect for left multiplying the DFT magnitude spectrum by
 	mel_filterbank;
 	% handle to get vector of which filters correspond to which channel
@@ -56,7 +53,7 @@ methods
 	function print_properties(this)
 		print_properties@feature_extractor(this);
 		fprintf('Upsampling factor: \t %d\n', this.feature_upsample_factor);
-		fprintf('Number of filters used in Mel filterbank: \t %d\n', this.NUM_MEL_FILTERS);
+		fprintf('Number of filters used in Mel filterbank: \t %d\n', this.num_mel_filters);
 	end
 
 	% set up feature specific parameters
@@ -64,20 +61,20 @@ methods
 		initialise@feature_extractor(this, audio_data, audio_sample_rate, name);
 
 		% in units of pi/2 radians per sample
-		LP_cutoff_freq_normalised = this.LP_CUTOFF_FREQ/(this.feature_sample_rate/2);
+		LP_cutoff_freq_normalised = this.lp_cutoff_freq/(this.feature_sample_rate/2);
 
-		[this.LP_num, this.LP_denom] = butter(this.LP_ORDER, LP_cutoff_freq_normalised);
-		this.LP_gain = this.feature_sample_rate/this.LP_CUTOFF_FREQ;
+		[this.LP_num, this.LP_denom] = butter(this.lp_order, LP_cutoff_freq_normalised);
+		this.LP_gain = this.feature_sample_rate/this.lp_cutoff_freq;
 
 		% stored the (compressed, upsampled and filtered)
 		% mel band energy in successive frames
 		this.processed_band_energy = ...
-			zeros(this.feature_upsample_factor*this.num_audio_frames, this.NUM_MEL_FILTERS);
+			zeros(this.feature_upsample_factor*this.num_audio_frames, this.num_mel_filters);
 
 		this.mel_filterbank = mel_filter(this.audio_sample_rate, ...
-			this.audio_win_length, this.NUM_MEL_FILTERS);
+			this.audio_win_length, this.num_mel_filters);
 
-		this.filter_divisions = round(linspace(1,this.NUM_MEL_FILTERS, ...
+		this.filter_divisions = round(linspace(1,this.num_mel_filters, ...
 			this.num_feature_channels+1));
 
 		this.mel_filters_in_channel = @(c) this.filter_divisions(c):this.filter_divisions(c+1);
@@ -87,18 +84,18 @@ methods
 
 	function compute_feature(this)
 		% store filter data in between loop iterations
-		filter_delays = zeros(this.LP_ORDER, this.NUM_MEL_FILTERS);
+		filter_delays = zeros(this.lp_order, this.num_mel_filters);
 
 		for n = 1:this.num_audio_frames
 			curr_frame = this.get_windowed_audio_frame(n);
 
-			%mean = sum(curr_frame)/length(curr_frame);
-			%variance = sum(curr_frame.^2)/(length(curr_frame) - 1);
+			%avg = sum(curr_frame)/length(curr_frame);
+			%variance = sum((curr_frame - avg).^2)/(length(curr_frame) - 1);
 			% normalise to mean 0 variance 1
 			% does doing this introduce noise?
             % since successive frames would have different means and variances...
 
-			%curr_frame = (curr_frame - mean)/sqrt(variance);
+			%curr_frame = (curr_frame - avg)/sqrt(variance);
 
 			power_spectrum = abs(fft(curr_frame, this.audio_win_length));
 			% throw away (symmetrical) right half of spectrum
@@ -106,10 +103,10 @@ methods
 
 			mel_band_energy = this.mel_filterbank * power_spectrum;
 
-			% mel band energy is a vector of length this.NUM_MEL_FILTERS
+			% mel band energy is a vector of length this.num_mel_filters
 
 			% use log-compression as Klapuri does, mu = 100
-			compressed_band_energy = log(1 + this.MU*mel_band_energy)/log(1 + this.MU);
+			compressed_band_energy = log(1 + this.mu*mel_band_energy)/log(1 + this.mu);
 
 			% here Klapuri performs a 2x interpolation of the compressed
 			% mel band energy over time before calculating the difference between frames
@@ -119,7 +116,7 @@ methods
 
 			upsampled_band_energy = [
 				compressed_band_energy'
-				zeros(this.feature_upsample_factor - 1, this.NUM_MEL_FILTERS)
+				zeros(this.feature_upsample_factor - 1, this.num_mel_filters)
 			];
 
 			% filter along first dimension (frames), using the low pass filter, and store the
@@ -168,8 +165,8 @@ methods
 				% makes analysis better according to [4]
 				% also multiply differenced filter output by ratio of
 				% sampling frequencies of audio and low pass filter, (again following [4])
-				this.feature_matrix(save_indices, c) = (1 - this.LAMBDA)*undifferenced_band_energy + ...
-					this.LAMBDA*this.LP_gain*differenced_band_energy;
+				this.feature_matrix(save_indices, c) = (1 - this.lambda)*undifferenced_band_energy + ...
+					this.lambda*this.LP_gain*differenced_band_energy;
 			end
 		end
 	end
@@ -197,8 +194,8 @@ methods
 			plot(HWR_difference);
 			title(sprintf('Rectified difference, frame %d->%d', frame-1, frame));
 		end
-
-	end
 	end
 
 end % methods
+
+end % classdef
