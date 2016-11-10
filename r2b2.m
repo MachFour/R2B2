@@ -53,7 +53,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
     % ==== AGGREGATOR ====
     % setup the aggregator
     agg = aggregator;
-    agg.initialise();
+    agg.initialise(tp_estimator{1}.feature_win_length);
     
     % feed it each of the windows
     figure % new figure
@@ -72,6 +72,24 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
         %    agg.estimate_windows{test_windows(i)});
         %a.plot_phase_cluster_sets(agg.hypothesis_data{test_windows(i)});
         %display(agg.hypothesis_data{test_windows(i)}.P_p_given_t_at_h);
+    end
+    
+    % write data out to an annotation file
+    filename = strrep(audio_filename, '.wav', '.txt');
+    outfile = fopen(strcat(audio_directory, filename), 'w+');
+    last_beat_time = 0;
+    for i=1:length(agg.tp_outputs)
+        tempo = agg.tp_outputs(i, 1)/tp_estimator{1}.feature_sample_rate;
+        phase = agg.tp_outputs(i, 2)/tp_estimator{1}.feature_sample_rate;
+        if tempo ~= 0 && phase ~= 0
+            next_beat_time = 5.94 + i*5.94*0.125;
+            curr_beat_time = 5.94 + (i - 1)*5.94*0.125 + tempo + phase;
+            while curr_beat_time < next_beat_time
+                fprintf(outfile, '%.3f\n', curr_beat_time);
+                curr_beat_time = curr_beat_time + tempo;
+            end
+            last_beat_time = curr_beat_time;
+        end
     end
     
     % ===================

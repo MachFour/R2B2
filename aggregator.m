@@ -17,7 +17,9 @@ properties (Constant)
     P_I = 3;    % phase index
     C_I = 4;    % confidence index
     
-    eps = 10;
+    eps = 20;
+    
+    num_features = 4;
 end % properties (Constant
 
 properties
@@ -39,12 +41,13 @@ properties
     % mechanism
     tp_outputs;
     
+    % how many frames there are in a window. used to compute the feedback
+    % point
+    window_length;
+    
 end % properties
 
 properties (Dependent)    
-    % as measured from the size of the incoming data set
-    num_features;
-
     % the most recent tempo_phase_estimate
     curr_tp_estimate;
     
@@ -52,19 +55,16 @@ end % properties (Dependent)
 
 methods
     % ==== constructor ====
-	function initialise(this)
+	function initialise(this, window_length)
         % no data in anything to start with
         this.w_i                = 0;
         this.estimate_windows   = cell(1);
         this.hypothesis_data    = cell(1);
         this.tp_outputs         = [];
+        this.window_length      = window_length;
     end
 
     % ==== getters ====
-    function n = get.num_features(this)
-        n = length(this.estimate_windows{this.w_i});
-    end
-    
     function point = get.curr_tp_estimate(this)
         point = this.tp_outputs(this.w_i,:);
     end
@@ -75,19 +75,44 @@ methods
     % in window together and then compute output estimate 
     function add_window(this, window, window_index)
         this.w_i = this.w_i + 1;
+        
+        if this.w_i == 1
+            n_f = this.num_features;
+        else % we add an extra feature for our feedback point
+            n_f = this.num_features + 1;     
+        end
+       
         % set the dimension to the number of features in the window
-        this.estimate_windows{this.w_i} = cell(length(window), 1);
+        this.estimate_windows{this.w_i} = cell(n_f, 1);
         
         % transform the data into what is used by this class
-        for i=1:this.num_features
-            this.estimate_windows{this.w_i}{i} = ...
-                window{i}.tempo_phase_estimates{window_index};
+        for i=1:n_f
+            if i <= this.num_features
+                this.estimate_windows{this.w_i}{i} = ...
+                    window{i}.tempo_phase_estimates{window_index};
+            else
+                % here we compute the estimate for the feedback observation
+                past_tempo = this.tp_outputs(this.w_i - 1,1);
+                past_phase = this.tp_outputs(this.w_i - 1,2);
+                past_confidence = this.tp_outputs(this.w_i - 1,3);
+                curr_phase = past_phase + past_tempo;
+                while curr_phase < this.window_length/8 && past_tempo ~= 0
+                    curr_phase = curr_phase + past_tempo;
+                end
+                % now we are past the end of the next window. shave off a
+                % past_tempo and subtract the window length to get a
+                % negative phase
+                curr_phase = curr_phase - past_tempo - this.window_length/8;
+                % ^ distance from the end of the next window
+                this.estimate_windows{this.w_i}{i} = ...
+                    [past_tempo, 0, curr_phase, past_confidence];
+            end
         end
         
         % instantiate the hypothesis cluster
         this.hypothesis_data{this.w_i} = hypothesis_cluster;
         this.hypothesis_data{this.w_i}.initialise(this.estimate_windows{this.w_i}, ...
-            this.harmonics, this.num_features);
+            this.harmonics, n_f);
         
         [tempo_out, harmonic_index] = this.compute_winning_tempo();
         phase_out = this.compute_winning_phase(harmonic_index);
@@ -102,8 +127,9 @@ methods
         
         % find the harmonic index coresponding to the max
         i_h = find(e == max(e)); 
-        if length(i_h) > 1
+        if length(i_h) > 1 || isempty(i_h)
             t = 0;
+            i_h = []; % to stop glitches at the end...
         else
             t = this.hypothesis_data{this.w_i}.tempo_c_o_m/this.harmonics(i_h);
         end
@@ -118,12 +144,21 @@ methods
     % thinking about...
     function evidence_list = collect_evidence(this)
         evidence_list = zeros(length(this.harmonics), 1);
+        
         for i=1:length(evidence_list)
             evidence_list(i) = ...
                 sum(this.harmonics.*...
                 this.hypothesis_data{this.w_i}.P_p_given_t_at_h(i,:))*...
                 this.hypothesis_data{this.w_i}.t_clusters{i}.tot_conf;
         end
+        
+        % weigh tempos by the log-normal distribution
+        harmonics_list = (1./this.harmonics)*...
+            this.hypothesis_data{this.w_i}.tempo_c_o_m;
+        % this is arbitrary at the moment. i just drew a distribution that
+        % looked good
+        w = lognpdf(harmonics_list/172.2, 0.15, 0.7);
+        evidence_list = evidence_list.*w';
     end
     
     % this function finds the most confident 'epsilon' grouping of phases at
@@ -133,26 +168,26 @@ methods
     function phi = compute_winning_phase(this, index)
         % find the cluster containing all the phase points at the winning
         % tempo harmonic
-        cluster = this.hypothesis_data{this.w_i}.t_clusters{index};
-        
-        test_cluster = tp_cluster;
-        test_cluster.initialise(this.num_features)
-        top_score = 0;
-        
-        % find the most confident epsilon ball
-        for i=cluster.non_empty_features
-            for j=1:cluster.n_pts(i)
-                seed = cluster.get_point(i, j);
-                most_confident_cluster = this.points_in_ball(seed, index);
-                if test_cluster.tot_conf > top_score
-                    top_score = test_cluster.tot_conf;
-                    most_confident_cluster = test_cluster;
+        if isempty(index) % to stop glitches at the end...
+            phi = 0;
+        else 
+            cluster = this.hypothesis_data{this.w_i}.t_clusters{index};
+
+            top_score = 0;
+
+            % find the most confident epsilon ball
+            for i=cluster.non_empty_features
+                for j=1:cluster.n_pts(i)
+                    seed = cluster.get_point(i, j);
+                    test_cluster = this.points_in_ball(seed, index);
+                    if test_cluster.tot_conf > top_score
+                        top_score = test_cluster.tot_conf;
+                        most_confident_cluster = test_cluster;
+                    end
                 end
             end
-        end
-        
-        % take the weighted mean of that ball
-        if ~isempty(cluster.non_empty_features)
+
+            % take the weighted mean of that ball
             weighted_phases = zeros(sum(most_confident_cluster.n_pts), 1);
             k = 1;
             for i=most_confident_cluster.non_empty_features
@@ -162,11 +197,9 @@ methods
                     k = k + 1;
                 end
             end
-        
+
             phi = sum(weighted_phases)/most_confident_cluster.tot_conf;
-        else
-            phi = 0;
-        end 
+        end
     end
     
     function cluster = points_in_ball(this, seed, index)
@@ -175,22 +208,23 @@ methods
         tempo_cluster = this.hypothesis_data{this.w_i}.t_clusters{index};
         
         cluster = tp_cluster;
-        cluster.initialise(this.num_features)
+        cluster.initialise(tempo_cluster.n_f);
         
         % find the most confident epsilon ball
-        for i=cluster.non_empty_features
-            for j=1:cluster.n_pts(i)
+        for i=tempo_cluster.non_empty_features
+            for j=1:tempo_cluster.n_pts(i)
                 point = tempo_cluster.get_point(i, j);
                 if abs(point(this.P_I) - seed(this.P_I)) < this.eps/2
-                    cluster.add_point(point);
+                    cluster.add_point(i, point);
                 end
             end
         end
     end
     
-    % not sure what to do here just yet...
     function c = compute_winning_confidence(this)
-        c = 1;
+        e = this.collect_evidence();
+        K = 0.77; % the feedback constant
+        c = K*(max(e)/sum(e))*this.hypothesis_data{this.w_i}.P_t_clustering;
     end
     
 end % methods

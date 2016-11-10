@@ -189,7 +189,7 @@ methods
         cluster_set = cell(1, this.n);
         for i=1:this.n
             cluster_set{i} = tp_cluster;
-            cluster_set{i}.initialise(this.n);
+            cluster_set{i}.initialise(this.n_f);
         end
     
         for i=1:this.n_f % iterate over all features
