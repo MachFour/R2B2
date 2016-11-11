@@ -29,7 +29,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	tp_estimator = cell(feature1.num_feature_channels, 1);
 
 	for n = 1:feature1.num_feature_channels
-		tp_estimator{n} = tpe_autocorrelation2;
+		tp_estimator{n} = tpe_autocorrelation;
 		tp_estimator{n}.initialise(feature1.feature_matrix(:, n), ...
 			feature1.feature_sample_rate, sprintf('acf-feature1-ch%d', n));
 	end
