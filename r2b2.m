@@ -52,7 +52,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 
 	% ==== AGGREGATOR ====
 	% setup the aggregator
-	
+
 	feature_sample_rate = tp_estimator{1}.feature_sample_rate;
 	initial_estimate_time = tp_estimator{1}.feature_win_time;
 
@@ -84,7 +84,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 
 	% write data out to an annotation file
 	filename = strrep(audio_filename, '.wav', '.txt');
-	outfile = fopen(strcat(data_output_directory, filename), 'w+');
+	outfile = fopen(strcat(data_output_directory, '/', filename), 'w+');
 	for i=1:length(agg.tp_outputs)
 		tempo = agg.tp_outputs(i, 1)/feature_sample_rate;
 		phase = agg.tp_outputs(i, 2)/feature_sample_rate;
