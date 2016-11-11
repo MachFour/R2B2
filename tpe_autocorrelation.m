@@ -1,4 +1,3 @@
-
 % Class that performs tempo and phase estimation from a single dimensional
 % feature, by using autocorrelation to detect likely periodicities (i.e.
 % possible tempos), and then for each of those, using a sequence of impulses
@@ -134,6 +133,11 @@ methods
 				% in samples
 				curr_tempo_estimate = curr_tempo_estimates(tempo_index);
 				curr_tempo_confidence = curr_tempo_confidences(tempo_index);
+
+				if curr_tempo_estimate < this.min_lag_samples/4
+					% that's just too fast, skip this
+					continue;
+				end
 
 				% make an impulse train for each tempo hypothesis,
 				% then slide it along the detection function for one tempo period,
