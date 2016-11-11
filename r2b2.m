@@ -21,7 +21,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	feature1 = odf_klapuri;
 	feature1.initialise(audio_data, audio_sample_rate, ...
 		'klapuris_feature');
-    
+
 	feature1.compute_feature;
 
 	% make a tempo_phase estimator for each channel of feature1, since
@@ -48,52 +48,59 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 		if output_data
 			tp_estimator{n}.output_tempo_phase_data(data_output_directory);
 		end
-    end
-    
-    % ==== AGGREGATOR ====
-    % setup the aggregator
-    agg = aggregator;
-    agg.initialise(tp_estimator{1}.feature_win_length);
-    
-    % feed it each of the windows
-    figure % new figure
-    for i=1:length(tp_estimator{1}.tempo_phase_estimates)
-        agg.add_window(tp_estimator, i);
-        tempo = 60/(agg.curr_tp_estimate(1)/tp_estimator{1}.feature_sample_rate);
-        hold on
-        scatter(i, tempo, 'b')
-        hold off
-    end
-    
-    a = aggregator_demo;
-    test_windows = [2, 8, 12, 24, 36];
-    for i=1:length(test_windows)
-        %a.plot_tempo_clustering_demo(agg.hypothesis_data{test_windows(i)}, ...
-        %    agg.estimate_windows{test_windows(i)});
-        %a.plot_phase_cluster_sets(agg.hypothesis_data{test_windows(i)});
-        %display(agg.hypothesis_data{test_windows(i)}.P_p_given_t_at_h);
-    end
-    
-    % write data out to an annotation file
-    filename = strrep(audio_filename, '.wav', '.txt');
-    outfile = fopen(strcat(audio_directory, filename), 'w+');
-    last_beat_time = 0;
-    for i=1:length(agg.tp_outputs)
-        tempo = agg.tp_outputs(i, 1)/tp_estimator{1}.feature_sample_rate;
-        phase = agg.tp_outputs(i, 2)/tp_estimator{1}.feature_sample_rate;
-        if tempo ~= 0 && phase ~= 0
-            next_beat_time = 5.94 + i*5.94*0.125;
-            curr_beat_time = 5.94 + (i - 1)*5.94*0.125 + tempo + phase;
-            while curr_beat_time < next_beat_time
-                fprintf(outfile, '%.3f\n', curr_beat_time);
-                curr_beat_time = curr_beat_time + tempo;
-            end
-            last_beat_time = curr_beat_time;
-        end
-    end
-    
-    % ===================
-    
+	end
+
+	% ==== AGGREGATOR ====
+	% setup the aggregator
+	
+	feature_sample_rate = tp_estimator{1}.feature_sample_rate;
+	initial_estimate_time = tp_estimator{1}.feature_win_time;
+
+	estimate_hop_time = initial_estimate_time * ...
+		(1 - tp_estimator{1}.FEATURE_WIN_OVERLAP_PERCENT/100);
+
+	agg = aggregator;
+	agg.initialise(tp_estimator{1}.feature_win_length);
+
+	% feed it each of the windows
+	figure % new figure
+	for i=1:length(tp_estimator{1}.tempo_phase_estimates)
+		agg.add_window(tp_estimator, i);
+		tempo = 60/(agg.curr_tp_estimate(1)/feature_sample_rate);
+		hold on
+		scatter(i, tempo, 'b')
+		hold off
+	end
+
+	a = aggregator_demo;
+	test_windows = [2, 8, 12, 24, 36];
+	for i=1:length(test_windows)
+		%a.plot_tempo_clustering_demo(agg.hypothesis_data{test_windows(i)}, ...
+		%    agg.estimate_windows{test_windows(i)});
+		%a.plot_phase_cluster_sets(agg.hypothesis_data{test_windows(i)});
+		%display(agg.hypothesis_data{test_windows(i)}.P_p_given_t_at_h);
+	end
+
+
+	% write data out to an annotation file
+	filename = strrep(audio_filename, '.wav', '.txt');
+	outfile = fopen(strcat(data_output_directory, filename), 'w+');
+	for i=1:length(agg.tp_outputs)
+		tempo = agg.tp_outputs(i, 1)/feature_sample_rate;
+		phase = agg.tp_outputs(i, 2)/feature_sample_rate;
+		if tempo ~= 0 && phase ~= 0
+			predict_beats_until = initial_estimate_time + i*estimate_hop_time;
+			next_predicted_beat = initial_estimate_time + ...
+				(i - 1)*estimate_hop_time + tempo + phase;
+			while next_predicted_beat < predict_beats_until
+				fprintf(outfile, '%.3f\n', next_predicted_beat);
+				next_predicted_beat = next_predicted_beat + tempo;
+			end
+		end
+	end
+
+	% ===================
+
 	if output_data == 0
 		% do scatter plot of all estimates in sample frames
 		for k = sample_frames
@@ -117,5 +124,5 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 			xlabel('Tempo period (seconds)');
 			ylabel('Offset from frame end (seconds)');
 		end
-    end
+	end
 end
