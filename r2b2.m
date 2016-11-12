@@ -116,6 +116,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 				tp_estimator{1}.get_frame_end_time(k)));
 			xlabel('Tempo period (seconds)');
 			ylabel('Offset from frame end (seconds)');
+            zlabel('Confidence');
 		end
     end
 end
