@@ -3,9 +3,6 @@ R2B2 aka 'Meat tracker'
 
 To run: use the function R2B2 which looks really nice now
 
-In its current form, the function computes tempo and phase estimates
-and plots a sample of frames showing likely beat locations
-
 ***************
 Class structure
 ***************
@@ -27,19 +24,17 @@ Concrete classes:
 odf_klapuri -
 Implements Klapuri's onset detection function
 
+odf_mfcc -
+Computes a feature made of differenced MFCCs
+
 tpe_autocorrelation -
 Performs autocorrelation-based tempo detection, then for each tempo estimate
 in a frame of features, finds phase by sliding set of equally spaced impulses
 along the feature frame, and choosing the amount of shift that maximises their
 dot product
 
-tpe_autocorrelation2 -
-Also performs autocorrelation-based tempo detection, but using a different method
-of autocorrelation
-
 Helper functions:
 
-autocorrelation.m - Calculates autocorrelation
-autocorrelation2.m - Calculates autocorrelation in a better way
-mel_filter.m - for klapuri's feature, and also MFCC calculation (later)
+autocorrelation.m - Calculates autocorrelation in an improved way
+mel_filter.m - for klapuri's feature, and also MFCC calculation
 beat_alignment_function.m - for phase calculation

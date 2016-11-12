@@ -130,7 +130,7 @@ methods
 				this.beat_times(beat_index) = predicted_beat_time;
 				beat_index = beat_index + 1;
 				% try to predict another beat time
-				predicted_beat_time = predicted_beat_time + kth+tempo;
+				predicted_beat_time = predicted_beat_time + kth_tempo;
 			end
 		end
 		% trim beat times array to remove zeros?

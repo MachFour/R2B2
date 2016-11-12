@@ -1,7 +1,7 @@
 
 Clean up initialisation into constructors
-implement klapuri's comb filters? -> change feature win time to 3s
 implement prediction layer using Viterbi Algorithm
-implement MFCC detection function
 implement weighted phase deviation ODF
 implement chroma-based odf?
+
+think about normalising features (to power 1?) before tempo/phase estimation stage
