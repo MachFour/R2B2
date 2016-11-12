@@ -38,3 +38,11 @@ Helper functions:
 autocorrelation.m - Calculates autocorrelation in an improved way
 mel_filter.m - for klapuri's feature, and also MFCC calculation
 beat_alignment_function.m - for phase calculation
+
+*********************
+Aggregation Algorithm
+*********************
+
+tp_cluster.m - data structure for use in clustering
+aggregator.m - class that manages aggregation (hopefully will be made to subclass beat_predictor)
+hypothesis_cluster.m - helper file?
