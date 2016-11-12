@@ -24,6 +24,8 @@ properties
 
     n_pts;      % an array containing the number of points for each 
                 % feature. saves typing when looping
+				
+	non_empty_features; % the set of non-empty features. useful for indexing
 end % properties
 
 properties (Dependent)
@@ -36,8 +38,6 @@ properties (Dependent)
     
     min_tempo;  % these aren't used anywhere yet so we might not need them
     max_tempo;
-    
-    non_empty_features; % the set of non-empty features. useful for indexing
     
 end % properties (Dependent)
 
@@ -104,12 +104,7 @@ methods
             phases(i) = max(this.tp_ests{i}(:, this.T_I));
         end
         t = max(phases);
-    end
-    
-    % returns the set of indexes with non-zero entries in n_pts
-    function s = get.non_empty_features(this)
-        s = setdiff(1:this.n_f, find(this.n_pts==0));
-    end
+	end
     
     % ==== general methods ====
     
@@ -118,6 +113,9 @@ methods
     function add_point(this, feature, point)
         this.n_pts(feature) = this.n_pts(feature) + 1;
         this.tp_ests{feature} = [this.tp_ests{feature}; point];
+		if ~any(this.non_empty_features == feature)
+			this.non_empty_features = [this.non_empty_features, feature];
+		end
     end
     
     % for examinining individual points
