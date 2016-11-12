@@ -1,0 +1,32 @@
+
+Hi everyone, I thought since we're probably going to have multiple people
+working on this repo, we should have some sort of style guide for MATLAB code.
+
+These aren't hard and fast rules, it's just what I tend to do and I'm used to
+it. I'm open to suggestions if anyone feels really strongly about something.
+
+With that said, here are some current style things:
+
+1.
+	use tabs for indenting and spaces for lining up equals signs or comments.
+	This way you can set your preferred indenting amount using the tab width, but
+	everything will still be vertically aligned.
+
+2.
+	Minimise 'squishing together' of operators, except for brackets
+	e.g. for k = 1:n
+	not  for k=1:n
+	but something like y = m*x + b is okay.
+	e.g. A = calculate_thing(x);
+	not  A = calculate_thing( x );
+	if in doubt, use your judgement and be consistent.
+
+3.
+	Increase indent one level after every loop/conditional,
+	function declaration, method/properties block, etc.
+	Basically the only time that you don't need to do this is
+	for a classdef (or possibly for a function in its own file)
+	where you'd be indenting the whole file, which is pointless.
+
+4.
+	Use informative variable names, even if they're long :)

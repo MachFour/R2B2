@@ -1,26 +1,26 @@
-%                             tp_cluster.m
-% author:       daniel parker
-% description:  tp_cluster = 'tempo phase cluster' is a data structure that 
-%               holds (tempo, phase, confidence) points for use in clustering
-%               methods and cluster storage. it is accompanied by some 
-%               useful methods to keep usage simple. not sure yet if all
-%               the getters are needed but the confidence ones are
-%               certainly used...
+% tp_cluster.m
+% Author:	   Daniel parker
+% Description:  tp_cluster = 'tempo phase cluster' is a data structure that
+%			   holds (tempo, phase, confidence) points for use in clustering
+%			   methods and cluster storage. it is accompanied by some
+%			   useful methods to keep usage simple. not sure yet if all
+%			   the getters are needed but the confidence ones are
+%			   certainly used...
 
 classdef tp_cluster < handle
 
 properties (Constant)
-    T_I = 1;    % tempo index
-    P_I = 3;    % phase index
-    C_I = 4;    % confidence index
-    
+	T_I = 1;	% tempo index
+	P_I = 3;	% phase index
+	C_I = 4;	% confidence index
+
 end % properties (Constant)
 
 properties
-    tp_ests;    % a cell array indexed by feature, containing a matrix 
-                % of points with rows of the form [tempo, phase, confidence]
+	tp_ests;	% a cell array indexed by feature, containing a matrix
+				% of points with rows of the form [tempo, phase, confidence]
 
-    n_f;        % the number of features present in this cluster
+	n_f;		% the number of features present in this cluster
 
     n_pts;      % an array containing the number of points for each 
                 % feature. saves typing when looping
