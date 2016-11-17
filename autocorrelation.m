@@ -1,33 +1,35 @@
 % autocorrelation.m
 % calculates the autocorrelation of a feature frame
-% by sliding it back across itself and a previous frame
-% this way problems of bias are avoided
-
-% frames should be column vectors and have the same length
-% make sure the frames have the same length
+% by splitting it in half, sliding the second half back across the first
+% half, and computing the inner product of the two.
+% The frame is first normalised to have unit power.
 
 % Author: Max Fisher
 
-function ac = autocorrelation(feature_frame, prev_frame)
-	if size(feature_frame) ~= size(feature_frame)
-		error('Frames are different sizes');
+function acf = autocorrelation(feature_frame)
+	len = length(feature_frame);
+	if mod(len, 2) ~= 0
+		warning('Autocorrelation frame cannot be split in half evenly');
 	end
-	l = length(feature_frame);
-	combined_frame = [prev_frame; feature_frame];
 
-	% normalise to power 1 (not mean zero)
-	power = sum(combined_frame.^2)/length(combined_frame);
-	combined_frame = combined_frame/sqrt(power);
-	feature_frame = feature_frame/sqrt(power);
+	% normalise RMS power to 1 (not mean zero)
+	power = sqrt(sum(feature_frame.^2)/len);
+	feature_frame = feature_frame./power;
 
-	ac = zeros(size(feature_frame));
+	second_half = feature_frame(len/2+1:end);
+	%size(second_half)
+	%disp(len/2);
 
-	for shift = 0:l-1
-		shifted_frame = combined_frame(l-shift+1:end - shift);
-		ac(shift+1) = sum(shifted_frame.*feature_frame);
+	acf = zeros(size(second_half));
+
+	for shift = 0:len/2-1
+		shifted_frame = feature_frame((len/2 + 1 - shift):end - shift);
+		acf(shift+1) = sum(second_half.*shifted_frame)/(len/2);
 	end
 
 	% normalise so that first coefficient is 1, that way we can compare
 	% between different autocorrelations
-	ac = ac/ac(1);
+	% ac = ac/ac(1);
+	% -> maybe actually normalise to area 1?
+
 end

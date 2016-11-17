@@ -6,3 +6,5 @@ TO DO
 - fix get_centre_of_mass for phase
 - get phase clustering working...
 - phase clustering shouldn't need to find evidence for it's own tempo cluster (i.e. when i = 1)
+
+we should first cluster points as a way of reducing the number of distinct estimates, combining the confidences of each cluster in order to end up with a small number of candidate tempo/phase locations. Then do Dan's harmonic thing, completely agnostic to what was a cluster to pick the most likely candidate
