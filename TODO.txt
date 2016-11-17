@@ -6,3 +6,6 @@ implement chroma-based odf?
 
 think about normalising features (to power 1?) before tempo/phase estimation stage
 -> OR normalise autocorrelation area and beat alignment area to 1, then confidence is product of heights -> probability.
+-> make a 'normalise = 1' option for autocorrelation and beat alignment
+
+use a shorter feature window. But maybe still calculate autocorrelation using previous (non-overlapping) frame?
