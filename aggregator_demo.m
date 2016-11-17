@@ -17,8 +17,7 @@ properties (Constant)
 	audio_sample_rate = 44100;
 	audio_hop_size = 512; % samples
 	feature_upsampling = 2;
-
-	feature_sample_rate = 172.2656;
+	feature_sample_rate = audio_sample_rate/audio_hop_size*feature_upsampling;
 end
 
 methods
@@ -60,9 +59,9 @@ methods
 
 		% zero out the phases
 		h = hypothesis_cluster;
-		for i=h.non_empty_t_clusters
-			for j=h.t_clusters{i}.non_empty_features
-				for k=1:h.t_clusters{i}.n_pts(j)
+		for i = h.non_empty_t_clusters
+			for j = h.t_clusters{i}.non_empty_features
+				for k = 1:h.t_clusters{i}.n_pts(j)
 					h.t_clusters{i}.tp_ests{j}(k,h.P_I) = 0;
 				end
 			end
@@ -70,7 +69,7 @@ methods
 
 		% plot all the data points on a number line
 		hold on
-		for i=1:h.n_f
+		for i = 1:h.n_f
 			feature_data = window{i};
 			if ~isempty(feature_data)
 				tempos = feature_data(:,h.T_I)/this.feature_sample_rate;
@@ -86,7 +85,7 @@ methods
 		hold on
 		x = h.tempo_c_o_m/this.feature_sample_rate;
 		eps = h.eps_tempo;
-		for i=h.non_empty_t_clusters
+		for i = h.non_empty_t_clusters
 			k = h.harmonics(i);
 			line([x/k, x/k],[-0.1, 0.1], 'Color', 'Green');
 			line([x/k + eps/(2*k*this.feature_sample_rate), ...
@@ -100,7 +99,7 @@ methods
 	function plot_phase_cluster_sets(this, hypothesis_cluster)
 		figure
 		hold on
-		for i=hypothesis_cluster.non_empty_t_clusters
+		for i = hypothesis_cluster.non_empty_t_clusters
 			this.plot_cluster_set(hypothesis_cluster.tp_matrix(:,i), true);
 		end
 		hold off
