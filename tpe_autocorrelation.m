@@ -64,10 +64,7 @@ methods
 
 			% it's a column vector
 			curr_feature_frame = this.get_feature_frame(k);
-			first_half = curr_feature_frame(1:this.feature_win_length/2);
-			second_half = curr_feature_frame(this.feature_win_length/2+1:end);
-
-			acf2 = autocorrelation(second_half, first_half);
+			acf2 = autocorrelation(curr_feature_frame);
 			this.autocorrelation_data(k, :) = acf2;
 
 			% now pick peaks!
