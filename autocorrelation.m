@@ -17,8 +17,8 @@ function acf = autocorrelation(feature_frame)
 	feature_frame = feature_frame./power;
 
 	second_half = feature_frame(len/2+1:end);
-	size(second_half)
-	disp(len/2);
+	%size(second_half)
+	%disp(len/2);
 
 	acf = zeros(size(second_half));
 

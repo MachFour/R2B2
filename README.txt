@@ -1,7 +1,25 @@
 
-R2B2 aka 'Meat tracker'
+R2B2 - Real 2ime Beat 2racker.
+Written by Max Fisher and Daniel Parker
 
-To run: use the function R2B2 which looks really nice now
+*********
+To run:
+*********
+
+The main function is contained in r2b2.m. It will read in an audio file,
+calculate beat times, and output another audio file with the calculated
+beats superimposed as beeps on top of the original audio.
+
+It has only been tested with .wav files at 44.1kHz sample rate.
+
+To run on an audio file called 'my_audio.wav', located in 'my_directory',
+call the MATLAB function
+
+>>> r2b2('my_audio', 'my_directory');
+
+The script will then generate a file called 'annotated_my_audio.wav', and
+put it into 'my_directory'. This file can then be listened to using any
+normal music player application.
 
 ***************
 Class structure
