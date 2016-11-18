@@ -152,7 +152,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	end
 
 	% mix blips with audio, make blips slightly softer
-	annotated_audio = (2*audio_data + blip_track)/3;
+	annotated_audio = (3*audio_data + 2*blip_track)/5;
 	annotated_audio_filename = strcat('annotated_', audio_filename);
 	annotated_audio_path = strcat(audio_directory, '/', annotated_audio_filename);
 	audiowrite(annotated_audio_path, annotated_audio, audio_sample_rate);

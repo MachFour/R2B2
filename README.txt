@@ -8,7 +8,9 @@ To run:
 
 The main function is contained in r2b2.m. It will read in an audio file,
 calculate beat times, and output another audio file with the calculated
-beats superimposed as beeps on top of the original audio.
+beats superimposed as beeps on top of the original audio. Note that the
+algorithm only outputs predicted beat times after about 6 seconds of audio,
+so listen for beeps after then.
 
 It has only been tested with .wav files at 44.1kHz sample rate.
 
