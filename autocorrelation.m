@@ -29,7 +29,13 @@ function acf = autocorrelation(feature_frame)
 
 	% normalise so that first coefficient is 1, that way we can compare
 	% between different autocorrelations
-	% ac = ac/ac(1);
-	% -> maybe actually normalise to area 1?
+	% -> this step makes the RMS power normalisation in the previous step
+	% somewhat unnecessary
+	%acf = acf/acf(1);
+	
+	% in fact this is not a good idea, as if the power of a function is
+	% decreasing over the frame, then the inner product at lag zero will be
+	% less than the inner product at a greater lag.
+	% -> maybe use a different measure of similarity?
 
 end

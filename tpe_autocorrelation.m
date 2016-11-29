@@ -201,7 +201,8 @@ methods
 	function plot_sample_intermediate_data(this, sample_frames)
 
 		for sample_frame = sample_frames
-			time_axis = this.get_frame_end_time(sample_frame) + this.feature_time_axis;
+			time_axis = this.get_frame_start_time(sample_frame) + ...
+				this.feature_time_axis;
 			if sample_frame > this.num_feature_frames
 				warning('Cant plot sample frame %d; there are only %d feature frames\n', ...
 					sample_frame, this.num_feature_frames);
@@ -222,21 +223,23 @@ methods
 
 			figure;
 
-			plot(0:length(acf_data)-1, acf_data);
+			plot((0:length(acf_data)-1)/this.feature_sample_rate, acf_data);
 			hold on;
 			title(sprintf('ACF: t=%3.2f s', ...
-				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
-			xlabel('Lag (samples)');
+				this.get_frame_end_time(sample_frame)));
+			xlabel('Lag (s)');
 			ylabel('Similarity');
-			stem(this.min_lag_samples, 1);
-			stem(this.max_lag_samples, 1);
+			stem(this.min_lag, 1, 'black', 'x');
+			stem(this.max_lag, 1, 'black', 'x');
 
 			curr_tp_estimates = this.tempo_phase_estimates{sample_frame};
+			% version in seconds
+			curr_tp_estimates_s = this.tempo_phase_estimates_s{sample_frame};
 
 			% add indications of peaks picked
-			for estimate_idx = 1:size(curr_tp_estimates, 1)
-				tempo_estimate = curr_tp_estimates(estimate_idx, 1);
-				tempo_confidence = curr_tp_estimates(estimate_idx, 2);
+			for estimate_idx = 1:size(curr_tp_estimates_s, 1)
+				tempo_estimate = curr_tp_estimates_s(estimate_idx, 1);
+				tempo_confidence = curr_tp_estimates_s(estimate_idx, 2);
 				if tempo_estimate ~= 0
 					stem(tempo_estimate, tempo_confidence);
 				end
