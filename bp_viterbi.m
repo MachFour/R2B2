@@ -5,9 +5,18 @@ classdef bp_viterbi < beat_predictor
 
 properties
 	num_features;
+
+	% how many samples do we have for each observation frame, from each feature?
 	feature_frame_length;
+
+	% conversion factor from observation frame to time
 	feature_sample_rate;
+
+	% how many features do we have?
 	num_feature_frames;
+
+	% just counts how many frames have been added
+	frame_index;
 
 end
 
@@ -18,9 +27,61 @@ methods
 		this.feature_frame_length = feature_frame_length;
 		this.feature_sample_rate = feature_sample_rate;
 		this.num_feature_frames = num_feature_frames;
+		this.frame_index = 1;
 
 	end
-end
+
+	% gives the Viterbi algorithm a frame of observations (feature data), so that it
+	% can compute the most likely state for the current frame. The set of tempo
+	% estimates is used to narrow down the search of possible tempos to only a small
+	% subset identified by the tempo/phase estimator as likely.
+
+	% PARAMETERS:
+	% tempo_estimates = cell(1, this.num_features)
+	%	  is a cell matrix containing a set of tempo estimates (no confidences)
+	%	  for the current frame. There is one set for each feature, which means the cell
+	%	  matrix is 1 row (since it's only one frame's worth of data) by n columns, where
+	%	  n is the number of features. The tempo estimates should be in SECONDS.
+
+	% feature_data = cell(1, this.num_features)
+	%	  is a 1xn cell matrix containing the raw features, or observations.
+	%	  There is a column in the cell matrix for each feature, and each cell is a
+	%	  (single dimensional) vector of length equal to the feature frame length.
+
+	function add_observations(this, feature_data, tempo_estimates)
+		% decide which tempos to use group similar tempo estimates from different
+		% features, adding more weight to each of them from tpe_autocorrelation tempo
+		% peak picking: if estimates are closer than min_lag/2, treat them as the
+		% same tempo.
+
+		% values from tempo_phase_estimator
+		max_bpm = 320;
+		min_lag = 60/max_bpm;
+		% value from tpe_autocorrelation
+		MAX_TEMPO_PEAKS = 8;
+
+		% stores the set of tempos to search over in this iteration of the
+		% Viterbi algorithm
+		candidate_tempos = zeros(this.num_features*MAX_TEMPO_PEAKS, 1)
+		candidate_tempo_idx = 1;
+
+		for n = 1:this.num_features
+			tempo_estimates_n = tempo_estimates{n};
+			for estimate_idx = 1:length(tempo_estimates_n)
+				candidate_tempos(candidate_tempo_idx) = tempo_estimates_n(estimate_idx, 1);
+				candidate_tempo_idx = candidate_tempo_idx + 1;
+			end
+		end
+		% trim list to its actual length
+		candidate_tempos = candidate_tempos(1:end)
+
+		% now group together similar tempo estimates; use mean shift clustering.
+		clustered_candidate_tempos = mean_shift_cluster(candidate_tempos, min_lag/2);
+
+
+	end
+
+end % methods
 
 
 % MODEL SUMMARY:
@@ -216,7 +277,7 @@ methods (Static)
 		v = exp(-1/n);
 	end
 
-	
+
 
 	% need an Observation and a State class
 
@@ -242,7 +303,7 @@ methods (Static)
 		% while columns index different features.
 
 		% stores autocorrelation data, indexed in a similar way to above.
-		% currently, autocorrelation returns an array of half the length of the 
+		% currently, autocorrelation returns an array of half the length of the
 		% feature frame due to the way it works.
 
 		autocorrelation_data = zeros(feature_frame_length/2, num_features);
@@ -254,7 +315,7 @@ methods (Static)
 		observation_probability = zeros(num_tempos, num_beat_alignments);
 		transition_probability = zeros(num_tempos, num_beat_alignments);
 
-		% for all features	
+		% for all features
 			% calculate acf
 			% (for all meter variables - later)
 				% for all tempos
