@@ -103,37 +103,60 @@ methods
 	% Note that this method is inherently non-realtime, but it serves to demonstrate
 	% the functionality. Predictions for a given time should still be made only
 	% using past estimate data
-	function compute_beat_times(this)
+
+	% PARAMETERS:
+	% winning_estimates = matrix(num_feature_frames, 2)
+	% 	is a list of most likely tempo and beat location pairs, picked each time a new
+	% 	feature frame is evaluated (i.e. every this.time_between_estimates seconds).
+
+	% 	Note that num_feature_frames is not an actual variable, just a placeholder to
+	% 	indicate that the rows index feature frames.
+
+	% 	Each row is in the form (t, b), which means that during the frame
+	% 	of features ending at this.get_estimate_time(k) seconds of audio, the most
+	% 	likely tempo was t, and a beat is most likely to have occurred at b seconds
+	% 	of audio. Note that b is measured relative to the beginning of audio, and
+	% 	independent of frame sizes. However, since predictions are causal,
+	% 	b = winning_estimates(k, 2) will always be a time before feature frame k
+	% 	ends. Predictions of future beat times are done by adding multiples of t to
+	% 	b, until the end of frame k+1 is reached.
+	function beat_times = compute_beat_times(this, winning_estimates)
 		% assume 2 beats predicted per row of estimate data,
 		% just to be able to preallocate something
-		this.beat_times = zeros(2*size(this.winning_estimates, 1));
+		beat_times = zeros(2*size(winning_estimates, 1));
 		beat_index = 1;
 
-		for k = 1:size(this.estimate_data, 1)
+		for k = 1:size(winning_estimates, 1)
 			% output beat predictions using the kth winning tempo/phase
 			% estimate, up to the estimate time of the next frame
 			estimate_time = this.get_estimate_time(k);
-			% the estimates for the final frame may extend slightly over the
+			% note the estimates for the final frame may extend slightly over the
 			% end of the audio
 			next_estimate_time = this.get_estimate_time(k+1);
+			% this doesn't mean much if k = 1 but it won't cause any problems
+			prev_estimate_time = this.get_estimate_time(k-1);
 
-			% these should be in seconds. Phase should be negative
-			kth_tempo = this.winning_estimates(k, 1);
-			kth_phase = this.winning_estimates(k, 3);
+			% these should be in seconds.
+			kth_tempo = winning_estimates(k, 1);
+			kth_beat_time = winning_estimates(k, 2);
 
-			latest_observed_beat_time = estimate_time + kth_phase;
+			if prev_estimate_time > kth_beat_time || kth_beat_time > estimate_time
+				warning(strcat('Winning beat time estimate for frame %d', ...
+					'occurs before the end of frame %d!'), k, k-1);
+			end
 
-			predicted_beat_time = latest_observed_beat_time + kth_tempo;
+			predicted_beat_time = kth_beat_time + kth_tempo;
 			% do we need to allow for latency?
 			overlap_allowed = 0.01;
 			while predicted_beat_time <= next_estimate_time + overlap_allowed
-				this.beat_times(beat_index) = predicted_beat_time;
+				beat_times(beat_index) = predicted_beat_time;
 				beat_index = beat_index + 1;
 				% try to predict another beat time
 				predicted_beat_time = predicted_beat_time + kth_tempo;
 			end
 		end
 		% trim beat times array to remove zeros?
+		beat_times = beat_times(1:beat_index);
 	end
 
 	function output_beat_times(this, data_directory)
