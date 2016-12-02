@@ -1,6 +1,6 @@
 
 R2B2 - Real 2ime Beat 2racker.
-Written by Max Fisher and Daniel Parker
+Written by Max Fisher
 
 *********
 To run:
