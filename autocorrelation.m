@@ -9,33 +9,34 @@
 function acf = autocorrelation(feature_frame)
 	len = length(feature_frame);
 	if mod(len, 2) ~= 0
-		warning('Autocorrelation frame cannot be split in half evenly');
+		warning('Autocorrelation frame is an odd length, can''t split in half');
 	end
 
+	half_len = len/2;
+
 	% normalise RMS power to 1 (not mean zero)
-	power = sqrt(sum(feature_frame.^2)/len);
-	feature_frame = feature_frame./power;
+	% -> but do normalisation inside the loop, since every half_len slice of the
+	% feature frame has a different power
 
-	second_half = feature_frame(len/2+1:end);
-	%size(second_half)
-	%disp(len/2);
+	% this is what we'll shift back and compare against the whole frame.
+	% when the shift is zero, the second half of the frame is compared against itself.
+	half_frame = feature_frame(half_len + 1: end);
+	% since this is constant, we can normalise its power outside the loop
+	half_frame_power = sqrt(sum(half_frame.^2)/half_len);
+	normalised_half_frame = half_frame/half_frame_power;
 
-	acf = zeros(size(second_half));
+	acf = zeros(size(half_frame));
 
-	for shift = 0:len/2-1
-		shifted_frame = feature_frame((len/2 + 1 - shift):end - shift);
-		acf(shift+1) = sum(second_half.*shifted_frame)/(len/2);
+	for shift = 0:half_len-1
+		shifted_frame = feature_frame(half_len - shift + 1: end - shift);
+		shifted_frame_power = sqrt(sum(shifted_frame.^2)/half_len);
+		normalised_shifted_frame = shifted_frame/shifted_frame_power;
+
+		acf(shift+1) = sum(normalised_half_frame.*normalised_shifted_frame)/half_len);
 	end
 
 	% normalise so that first coefficient is 1, that way we can compare
 	% between different autocorrelations
-	% -> this step makes the RMS power normalisation in the previous step
-	% somewhat unnecessary
+	% -> the RMS power normalisation in the previous step makes this unnecessary
 	%acf = acf/acf(1);
-	
-	% in fact this is not a good idea, as if the power of a function is
-	% decreasing over the frame, then the inner product at lag zero will be
-	% less than the inner product at a greater lag.
-	% -> maybe use a different measure of similarity?
-
 end
