@@ -231,11 +231,15 @@ methods (Static)
 	% current_message = matrix(num_tempos, num_beat_alignments)
 	% 	is the probability of each state given observations up to this point
 	% current_feature_frame = matrix(feature_frame_length, num_features);
-	%   is the matrix of current feature frames
+	%   is the matrix of feature data from each feature, for the current 
+	%   feature frame
 	function new_message = update_forward_message(current_message, current_feature_frame)
 		% new_forward_message(X_t)
 		% = Prob(X_t | e_{1...t})
-		% (proportional to) P(current_observations | X_t)*(sum over all states x_t-1) P(X_t | x_t-1)*current_forward_message(x_t-1)
+		% = K*(sum over all states x_t-1) P(X_t | x_t-1)*current_forward_message(x_t-1)
+		%		*P(current_observations | X_t)
+		% where K is a normalising constant, so that the sum of
+		% probabilities for each X_t is 1.
 
 		% this will store the feature frame when it's updated each time.
 		% rows index time, from earliest to most recent feature samples,
