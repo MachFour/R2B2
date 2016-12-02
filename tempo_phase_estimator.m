@@ -13,7 +13,7 @@ classdef (Abstract) tempo_phase_estimator < handle
 properties (Constant)
 	% BPM ranges to allow when detecting tempo
 	MIN_BPM_APPROX = 40;
-	MAX_BPM_APPROX = 240;
+	MAX_BPM_APPROX = 320;
 
 	% minimum length of audio to use for tempo estimation at each time point (seconds)
 	% actual length of feature frames will be power of 2 closest to this.
