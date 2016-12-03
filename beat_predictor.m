@@ -83,9 +83,9 @@ methods
 	% winning estimate) were made
 	function t = get_estimate_time(this, k)
 		% this is equal to feature_win_time of a tempo_phase_estimator
-		estimate_t0 = this.get_first_estimate_time;
+		estimate_t0 = this.first_estimate_time;
 		% this is equal to 1/estimate_update_rate of a tempo_phase_estimator
-		estimate_dt = this.get_time_between_estimates;
+		estimate_dt = this.time_between_estimates;
 		t = estimate_t0 + (k-1)*estimate_dt;
 	end
 
