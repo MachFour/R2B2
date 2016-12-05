@@ -1,300 +1,294 @@
+% bp_viterbi.m
+
 % Class implementing the Viterbi Algorithm,
 % used to do prediction of beat times.
 
-classdef bp_viterbi < beat_predictor
+% Author: Max Fisher
+
+classdef bp_viterbi < handle
 
 properties
+	% counts the frame number
+	frame_idx;
+
+	% each frame, we calculate the probability that the 'state' (i.e. tempo, beat
+	% location, meter, etc ...) of the music in this frame is one of a set of
+	% estimated 'likely' states. (Since calculating the probability for all possible
+	% states is too much). These variables store a cell array of the states, and a
+	% vector of probabilties to match.
+	% The probabilities measure the probability that the 'true' (and unobservable)
+	% state of the frame is equal to the corresponding entry in the current_states
+	% vector, given the 'observations' made of the music so far.
+	current_states;
+	current_probabilities;
+
+	winning_states;
+
+	data_output_suffix = '-beat-times.txt';
+
+	name;
 	num_features;
 
-	% how many samples do we have for each observation frame, from each feature?
-	feature_frame_length;
-
-	% conversion factor from observation frame to time
-	feature_sample_rate;
-
-	% how many features do we have?
-	num_feature_frames;
-
-	% just counts how many frames have been added
-	frame_index;
+	% processing_params object, used for sample to time conversions.
+	params;
 
 end
 
 methods
-	function initialise(this, num_features, feature_sample_rate, ...
-			feature_frame_length, num_feature_frames)
+	function initialise(this, params, predictor_name, num_features)
+		this.params = params;
+		this.predictor_name = predictor_name;
 		this.num_features = num_features;
-		this.feature_frame_length = feature_frame_length;
-		this.feature_sample_rate = feature_sample_rate;
-		this.num_feature_frames = num_feature_frames;
-		this.frame_index = 1;
+
+		this.frame_idx = 1;
+
+
+		% restrict to 50-180 BPM initially - low bpm makes it really
+		% inefficient!!! (there are a huge number of states)
+		min_initial_bpm = 45;
+		max_initial_bpm = 180;
+
+		sample_to_bpm_factor = this.params.feature_sample_rate*60;
+		min_tempo_samples = round(sample_to_bpm_factor/max_initial_bpm);
+		max_tempo_samples = round(sample_to_bpm_factor/min_initial_bpm);
+
+		% choose a sparser set of tempos to start with
+		initial_tempos = (min_tempo_samples:2:max_tempo_samples)';
+		this.generate_initial_forward_message(initial_tempos);
+
+		% allocate some space for winning estimates;
+		this.winning_states = cell(100, 1);
 
 	end
 
+	% uses the prior distribution to generate an initial forward message
+	% P(X_0 | null), i.e. the probability of any state given no information
+	function generate_initial_forward_message(this, initial_tempos)
+		states = this.generate_all_states(initial_tempos);
+		probs = zeros(size(states));
+
+		for state_idx = 1:length(states)
+			state = states{state_idx};
+			probs(state_idx) = musical_model.prior_prob(state);
+		end
+
+		% make the whole thing sum to 1 - as some priors are only proportional
+		probs = probs/sum(probs);
+		this.current_states = states;
+		this.current_probabilities = probs;
+	end
+
+	% converts tempo and phase in samples to a model state which measures
+	function s = state_from_tempo_and_alignment(this, tempo_samples, beat_alignment)
+		feature_sample_rate = this.params.feature_sample_rate;
+		frame_end_time = this.params.prediction_time(this.frame_idx);
+
+		% calculate tempo and absolute beat location in seconds
+		tempo_period = tempo_samples/feature_sample_rate;
+		beat_location = frame_end_time - beat_alignment/feature_sample_rate;
+		s = model_state(tempo_period, tempo_samples, beat_location, beat_alignment);
+	end
+
 	% gives the Viterbi algorithm a frame of observations (feature data), so that it
-	% can compute the most likely state for the current frame. The set of tempo
-	% estimates is used to narrow down the search of possible tempos to only a small
-	% subset identified by the tempo/phase estimator as likely.
+	% can compute the most likely state for the current frame.
 
 	% PARAMETERS:
 	% tempo_estimates = cell(1, this.num_features)
 	%	  is a cell matrix containing a set of tempo estimates (no confidences)
 	%	  for the current frame. There is one set for each feature, which means the cell
 	%	  matrix is 1 row (since it's only one frame's worth of data) by n columns, where
-	%	  n is the number of features. The tempo estimates should be in SECONDS.
+	%	  n is the number of features. The tempo estimates should be in SAMPLES.
 
 	% feature_data = cell(1, this.num_features)
 	%	  is a 1xn cell matrix containing the raw features, or observations.
 	%	  There is a column in the cell matrix for each feature, and each cell is a
 	%	  (single dimensional) vector of length equal to the feature frame length.
 
-	function add_observations(this, feature_data, tempo_estimates)
-		% decide which tempos to use group similar tempo estimates from different
-		% features, adding more weight to each of them from tpe_autocorrelation tempo
-		% peak picking: if estimates are closer than min_lag/2, treat them as the
-		% same tempo.
+	function step_frame(this, feature_data, tempo_estimates)
+		% these are the tempos that will be searched over
+		% the second column represents the size of the cluster. We can
+		% normalise this to give each cluster a weight.
 
-		% values from tempo_phase_estimator
-		max_bpm = 320;
-		min_lag = 60/max_bpm;
-		% value from tpe_autocorrelation
-		MAX_TEMPO_PEAKS = 8;
+		% -> extension: track which features had estimates in the cluster
+		% containing the tempo that is finally picked as the most likely
+		% one for this frame, and score those features higher.
+		tempo_clusters = this.cluster_tempo_estimates(tempo_estimates);
+
+		% for the moment we won't use which features had estimates in which cluster;
+		% just extract the actual clusters that were identified.
+		num_clusters = size(tempo_clusters, 1);
+		tempos_to_search = zeros(num_clusters, 1);
+		for i = 1:num_clusters
+			% clusters are in the first column of the cell array
+			tempos_to_search(i) = tempo_clusters{i, 1};
+		end
+
+		this.update_forward_message(feature_data, tempos_to_search);
+
+		% find the most likely state
+		most_likely_state = {};
+		highest_state_probability = 0;
+		num_states = size(this.current_states, 1);
+
+		for state_idx = 1:num_states
+			% this is, in theory, the probability of this state being the actual one,
+			% given all observations so far.
+			state = this.current_states(state_idx);
+			state_probability = this.current_probabilities(state_idx);
+
+			if state_probability > highest_state_probability
+				most_likely_state = state;
+				highest_state_probability = state_probability;
+			end
+		end
+
+		this.winning_states(state_idx) = most_likely_state;
+	end
+
+	% Narrows down the search of possible tempos to only a small
+	% subset identified by the tempo/phase estimator as likely.
+	% Different features will have picked different peaks for their autocorrelation
+	% functions, but if the different estimates are close enough, we treat them as
+	% both estimating the same tempo.  The idea is that if a lot of different
+	% features agree on the tempo, then it's more likely to be that tempo.
+
+	% PARAMETERS:
+	% tempo_estimates = cell(1, this.num_features)
+	%	  is a cell matrix containing a set of tempo estimates (no confidences)
+	%	  for the current frame. There is one set for each feature, which means the cell
+	%	  matrix is 1 row (since it's only one frame's worth of data) by n columns, where
+	%	  n is the number of features. The tempo estimates should be in SAMPLES.
+	function clustered_tempos = cluster_tempo_estimates(this, tempo_estimates)
 
 		% stores the set of tempos to search over in this iteration of the
 		% Viterbi algorithm
-		candidate_tempos = zeros(this.num_features*MAX_TEMPO_PEAKS, 1)
+		% each tempo is tagged with the number of the feature that it comes
+		% from.
+		candidate_tempos = zeros(this.num_features*this.params.max_tempo_peaks, 2);
 		candidate_tempo_idx = 1;
 
-		for n = 1:this.num_features
-			tempo_estimates_n = tempo_estimates{n};
-			for estimate_idx = 1:length(tempo_estimates_n)
-				candidate_tempos(candidate_tempo_idx) = tempo_estimates_n(estimate_idx, 1);
+		for feature_idx = 1:this.num_features
+			tempo_estimates_list = tempo_estimates{feature_idx};
+			for estimate_idx = 1:length(tempo_estimates_list)
+				tempo_estimate = tempo_estimates_list(tempo_estimate);
+				candidate_tempos(candidate_tempo_idx, 1) = tempo_estimate;
+				candidate_tempos(candidate_tempo_idx, 2) = feature_idx;
+
 				candidate_tempo_idx = candidate_tempo_idx + 1;
 			end
 		end
 		% trim list to its actual length
-		candidate_tempos = candidate_tempos(1:end)
+		candidate_tempos = candidate_tempos(1:candidate_tempo_idx, :);
 
-		% now group together similar tempo estimates; use mean shift clustering.
-		clustered_candidate_tempos = mean_shift_cluster(candidate_tempos, min_lag/2);
+		% now group together similar tempo estimates;
+		% use mean shift clustering *BY BPM*.
+		% 2BPM seems like a reasonable
+		% cluster width
 
+		sample_to_bpm_factor = this.params.feature_sample_rate*60;
 
+		bpm_distance = @(x, y) sqrt(sum(sample_to_bpm_factor.*(1./x - 1./y)).^2);
+		cluster_width = 2; % BPM
+		clustered_tempos = mean_shift_cluster(candidate_tempos, ...
+			bpm_distance, cluster_width);
 	end
 
-end % methods
+	% Calculate the beat times predicted by this algorithm, after frames have been
+	% added and winning states determined.
+	% Note that this method is inherently non-realtime, but it serves to demonstrate
+	% the functionality. Predictions for a given time is still be made only
+	% using past estimate data
 
+	% Each state contains variables of tempo period and beat location. These
+	% respectively represent the most likely tempo (period length, in seconds), and
+	% the absolute time at which a beat most recently occurred (most probably), in
+	% the frame for which the state was created.
+	% Since predictions are causal, the beat location will always be a time before
+	% its corresponding feature frame ends.
+	% Predictions of future beat times are done by adding multiples of the tempo
+	% period to the beat location, until the end of the next frame is reached.
+	function beat_times = compute_beat_times(this)
+		num_predictions = size(this.winning_states, 1);
 
-% MODEL SUMMARY:
-% Each time the tempo and beat location needs to be estimated, we use the Viterbi
-% algorithm to choose the most probable tempo period and beat location, according to
-% the following model:
+		% assume 3 beats predicted per row of estimate data,
+		% just to be able to preallocate something
+		beat_times = zeros(3*num_predictions, 1);
+		beat_index = 1;
 
-% for the kth set of feature frames (one for each of the n features), we have a state
-% vector: X[k] = (T[k], B[k], M[k], W_i[k]). W_i are a set of n weights, one for each
-% feature.
+		for k = 1:num_predictions
+			% output beat predictions using the kth winning tempo/phase
+			% estimate, up to the estimate time of the next frame
+			estimate_time = this.params.prediction_time(k);
+			% note the estimates for the final frame may extend slightly over the
+			% end of the audio
+			next_estimate_time = this.params.prediction_time(k+1);
+			% this doesn't mean much if k = 1 but it won't cause any problems
+			prev_estimate_time = this.params.prediction_time(k-1);
 
-% T[k] is the dominant tempo period, measured in seconds, for that frame
+			% these should be in seconds.
+			kth_winning_state = this.winning_states{k};
+			kth_tempo = kth_winning_state.tempo_period;
+			kth_beat_time = kth_winning_state.beat_location;
 
-% B[k] is the location of the beat (in seconds, measured from the beginning of the
-% audio) closest to the time at which the current feature frame ends (but not after)
-
-% M[k] is an indicator variable which represents the rhythmic meter that the current
-% slice of audio is in.  I'm not sure whether to make this for simple or compound
-% time, or duple or triple time.  This may be used to determine the shape of the beat
-% alignment function, or to look at harmonics in the autocorrelation
-
-% W_i[k] are n weight variables, one for each feature, which are used to determine
-% how important each feature's onsets are in predicting beat locations. We model
-% these as hidden variables, but there may be a better way of doing it. This is
-% because the relevance of a feature may change in different sections of the music,
-% and so the weights are allowed to vary over time, according to some observed
-% confidence measure which we have yet to determine exactly.
-
-% Transition probabilities essentially maintain continuity between estimates, and are
-% all reasonably intuitive. Progression of tempo, meter and weights are assumed
-% independent, and next beat location is dependent only on the previous tempo as well
-% as its own previous value.  Each probability is more or less a Gaussian
-% distribution centred around a projection of the previous state one time step
-% forward (in the case of the beat time) or just centred around the previous value
-% itself.
-
-% The rest of this description focuses on the observation probabilities, which encode
-% musical knowledge.  For the latter, we define F1, F2, F3, ... to be each of the n
-% features, and write P(Observations | State) := P(F1, F2, F3, ... | T[n] = t, B[n] =
-% b, M[n] = m, W_i[n] = w_i)           (1)
-
-% We assume that, given the state, the observed features are independent (since they
-% are meant to measure different aspects of the audio).  So then, we can split up the
-% joint probability into a product for each feature F_i
-
-% = (product over i of) P(F_i | T[n] = t, B[n] = b, M[n] = m, W_i[n] = w_i))     (2)
-
-% Now the probability of observing the feature frame, given the tempo, beat location,
-% and meter, is assumed to be proportional to the strength of the autocorrelation
-% function at lag t, multiplied by a sequence of impulses spaced t seconds a part and
-% shifted so that the latest one is at b seconds, multiplied by some metric of
-% musical measure, for example the energy of the harmonics of the autocorrelation at
-% harmonics 2 and 4 vs 3 and 6 (this comes from Davies and Plumbley,
-% "Context-Dependent Beat tracking of Musical Audio") in equation form, this gives
-% (up to a normalising constant for each term)
-
-% = (product over i of) ACF_i(t)*BAF_i(t, b)*metric_measure_i(t, m)              (3)
-
-% where ACF_i is the autocorrelation of feature i's frame, BAF is the 'beat alignment
-% function' i.e. the inner product of the t-spaced impulses with feature i and
-% metric_measure_i is some metric on the feature used to establish the meter
-
-% the last problem is to integrate the weights. If we simply multiply each term by a
-% weight, it doesn't really make sense. What's the probability of a observing feature
-% given its weight?  I took a liberal view, and used the weight as a measure of
-% 'how much discriminatory power' each feature has. If the weight is low, then we
-% shouldn't be 'listening' to that feature so much if it's high, that feature has
-% 'an important measure' of the observation probability.  One way to disregard one
-% particular feature's term was to make the probability artificially higher, so a
-% mismatch between the model and that feature's data isn't penalised so much.
-% Therefore, what could be done is to raise the previous probabilities in (3) to the
-% power of the weight.  When the weight is 0, the probability term becomes 1, thus
-% effectively removing it from the product.  When the weight is 1, then the
-% probability is unchanged. % This gives,
-
-% P(Observations | State)
-% := P(F1, F2, F3, ... | T[n] = t, B[n] = b, M[n] = m, W_i[n] = w_i)
-%  = (product over i of) (ACF_i(t)*BAF_i(t, b)*metric_measure_i(t, m))^w_i       (4)
-
-% A restriction could be imposed such that the weights must multiply to give 1, or
-% 1/e.  The latter has the nice property that, taking the logarithm of (4) gives a
-% weighed sum of log-probabilities such that the magnitudes of the weights sum to 1
-
-% One problem with the model as it stands is its large search space. Other than
-% discretising some of the variables (e.g weights are multiples of 0.1), one way to
-% make the search tractable is to pick the peaks of the autocorrelation function for
-% each feature - as is currently done - and evaluate state candidates only at these
-% likely tempo values. If S tempo values are allowed as candidates at each iteration,
-% and W is the number of weight values allowed, then the number of calculations is of
-% the order of S*S*W*n, where n is the number of features.  Does restricting S to
-% maybe 16 mean that the use of the Viterbi Algorithm is unwarranted?
-
-
-% prior probability distribution on tempos
-% lognormal distribution, with parameters taken
-% from Klapuri's paper (Equation 22).
-% He takes it from Parncutt (1994) "A perceptual model
-% of pulse salience"
-methods (Static)
-
-	function p = tempo_prior_prob(t1)
-		% parameters for the distribution.
-		% These are genre dependent! But Klapuri uses these anyway.
-		scale = 0.55;
-		shape = 0.28;
-		% p = lognpdf(t1, log(scale), shape);
-		p = exp(-1*(log(t1/scale))^2/(2*shape^2)) / (t1*shape*sqrt(2*pi));
-	end
-
-
-	% probability of a tempo change between any two frames
-	% in a song. t1 and t2 are the previous and next tempo periods respectively,
-	% measured in seconds
-	% This is taken from Klapuri's paper (equation 21).
-	function p = tempo_transition_prob(t1, t2)
-		% first term is a normal distribution as a function
-		% of the ratio of t1 and t2 - doubling tempo is as likely
-		% as halving it.
-
-		ratio_sigma = 0.2; % variance for normal distribution
-		ratio_prob = exp(-0.5*(ln(t2/t1)/ratio_sigma)^2) / sqrt(2*pi*ratio_sigma^2);
-		p = ratio_prob * tempo_prior_prob(t2);
-	end
-
-	% transition probability of beat position (B[k-1] = b1, T[k-1] = t1) -> B[k] = b2
-	% meant to reflect the fact that the expected beat location is
-	% some multiple of t1 seconds after the previous one.
-	% we make the transition probability a normal distribution
-	% centred around the expected beat time.
-	% Unlike the previous one, we don't use a prior, since the prior was
-	% uniform over times
-	function p = beat_position_transition_prob(b1, t1, b2)
-		% choose k to minimise b2 - (b1 + k*t1)
-		k = round((b2 - b1)/t1);
-
-		% heuristic: 95% of samples lie within 2 standard deviations
-		% of the mean. maybe 95% of beats lie within a quaver (tempo period/8)
-		% of the expected time. then 2*sigma = t1/8
-		beat_sigma = t1/16;
-		% p = normcdf(b2, b1 + k*t1, beat_sigma);
-		p = exp(-0.5*((b2 - (b1 + k*t1))/beat_sigma)^2)/sqrt(2*pi*beat_sigma^2);
-	end
-
-	% beats can start anywhere in the audio, make this uniform
-	% but over what period of time? I suppose any uniform distribution is
-	% proportional to 1, and we're going to be use proportional probabilities anyway.
-	function p = beat_position_prior_prob(~)
-		warning('Using unnormalised beat_position prior');
-		p = 1;
-	end
-
-	% Transition probability for the meter variable M[k-1] = m1 -> M[k] = m2
-	% for the moment this is just a small, constant probability of changing,
-	% since the transition probability does not include current observations
-	% if we know the meter to be one thing, we don't usually is would just
-	% change randomly, but making the probability zero doesn't seem like a
-	% good idea either. How do we decide what it is in the first place?
-	function p = meter_variable_transition_prob(m1, m2)
-		% probability of changing meter in any given frame?
-		% quite small. but it's obviously dependent on the piece
-		change_prob = 0.01;
-		% check for valid values
-		if (strcmp(m2, 'simple') || strcmp(m2, 'compound')) ...
-				&& (strcmp(m1, 'simple') || strcmp(m1, 'compound'))
-			if strcmp(m2, m1)
-				p = 1 - change_prob;
-			else
-				p = change_prob;
+			if prev_estimate_time > kth_beat_time || kth_beat_time > estimate_time
+				warning(strcat('Winning beat time estimate for frame %d', ...
+					'occurs before the end of frame %d!'), k, k-1);
 			end
-		else
-			p = 0;
+
+			predicted_beat_time = kth_beat_time + kth_tempo;
+			% do we need to allow for latency?
+			overlap_allowed = 0.01;
+			while predicted_beat_time <= next_estimate_time + overlap_allowed
+				beat_times(beat_index) = predicted_beat_time;
+				beat_index = beat_index + 1;
+				% try to predict another beat time
+				predicted_beat_time = predicted_beat_time + kth_tempo;
+			end
+		end
+		% trim beat times array to remove zeros?
+		beat_times = beat_times(1:beat_index);
+	end
+
+	function output_beat_times(this, data_directory)
+		filename = strcat(data_directory, '/', this.predictor_name, ...
+			this.DATA_OUTPUT_SUFFIX);
+		outfile = fopen(filename, 'w+');
+
+		for beat_index = 1:length(this.beat_times)
+			beat_time = this.beat_times(beat_index);
+			if beat_index > 1 && beat_time ~= 0
+				fprintf(outfile, '%.3f\n', this.beat_times(beat_index));
+			end
 		end
 	end
 
-	% more pieces are probably simple time than complex, but should
-	% that be modelled here? For now, we use a uniform distribution.
-	function p = meter_variable_prior_prob(m1)
-		if strcmp(m1, 'simple')
-			p = 0.5;
-		elseif strcmp(m1, 'compound')
-			p = 0.5;
-		else
-			p = 0;
-		end
-	end
 
-	% all weights equal initially. Should the product be 1/e?
-	% In which case the initial weights are e^(1/n), where n is the number
-	% of features
-	function v = feature_weight_initial_value
-		% have to pass in number of features from somewhere
-		warning('Number of features undefined');
-		v = exp(-1/n);
-	end
-
-
-
-	% need an Observation and a State class
+	% need an Observation and a State class?
 
 	% Compute the forward message of the hidden Markov model, given the most recent
 	% observations. This is a distribution over all possible states.
 	% in other words, do one step of filtering.
 	% the initial forward message is the initial prior.
 
-	% THIS WILL NEED OPTIMISING!!!
-
 	% PARAMETERS
-	% current_message = matrix(num_tempos, num_beat_alignments)
-	% 	is the probability of each state given observations up to this point
-	% current_feature_frame = matrix(feature_frame_length, num_features);
-	%   is the matrix of feature data from each feature, for the current 
-	%   feature frame
-	function new_message = update_forward_message(current_message, current_feature_frame)
+	% old_states, old_probs = cell(num_old_states, 1), zeros(num_old_states, 1)
+	% 	are vectors of states and a probability for each state respectively, given the
+	% 	past observations. This need not contain all possible states, as due to
+	% 	computational constraints, we calculate probabilities only for a subset of
+	% 	all possible tempos. By definition, all other states have a probability of
+	% 	zero, given the previous observations.
+	% new_states = cell(num_new_states, 1)
+	% 	is a list of the new states to calculate the probabilities for, which is a
+	% 	subset of all possible states that is heuristically determined by the
+	% 	tempo_phase_estimator. Note that the new states don't have to be a subset of
+	% 	the old states.
+	% observations = matrix(feature_frame_length, num_features);
+	% 	is the matrix of feature data from each feature, for the current
+	% 	feature frame
+	% tempos = matrix(num_tempos, 1)
+	% 	is the set of tempos (in samples) to consider when generating the states for
+	% 	the new message
+	function update_forward_message(this, observations, tempos)
 		% new_forward_message(X_t)
 		% = Prob(X_t | e_{1...t})
 		% = K*(sum over all states x_t-1) P(X_t | x_t-1)*current_forward_message(x_t-1)
@@ -302,108 +296,161 @@ methods (Static)
 		% where K is a normalising constant, so that the sum of
 		% probabilities for each X_t is 1.
 
-		% this will store the feature frame when it's updated each time.
-		% rows index time, from earliest to most recent feature samples,
-		% while columns index different features.
+		this.current_tempos = tempos;
+		new_states = this.generate_all_states(tempos);
 
-		% stores autocorrelation data, indexed in a similar way to above.
-		% currently, autocorrelation returns an array of half the length of the
-		% feature frame due to the way it works.
+		% calculate P(current_observations | X_t) for each X_t that we are
+		% considering. Note that these are proportional: the probability over all
+		% possible observations given some X_t may not sum to 1.
+		observation_probs = this.compute_observation_probs(observations, ...
+			new_states, tempos);
 
-		autocorrelation_data = zeros(feature_frame_length/2, num_features);
-		beat_alignment_data  = zeros(feature_frame_length/2, ...
-			feature_frame_length/2, num_features);
-
-		% state: (tempo, beat alignment) ... for now
-		new_message = zeros(num_tempos, num_beat_alignments);
-		observation_probability = zeros(num_tempos, num_beat_alignments);
-		transition_probability = zeros(num_tempos, num_beat_alignments);
-
-		% for all features
-			% calculate acf
-			% (for all meter variables - later)
-				% for all tempos
-					% calculate beat alignment
-					% for all beat alignments
-
-		% EXAMPLE VALUES: FIX
-		all_tempos = 1:1024;
-		all_beat_alignments = 1:1024;
-
-		for n = 1:num_features % -> currently we're just adding up all features equally!
-			feature_frame_n = current_feature_frame(:, n);
-			autocorrelation_data(:, n) = autocorrelation(feature_frame_n);
-			for t = all_tempos
-				beat_alignment_data(:, t, n) = beat_alignment_function(feature_frame_n, t);
-				for b = all_beat_alignments
-					%state = [t, b];
-					% unnormalised
-					observation_probability(t, b) = observation_probability(t, b) + ...
-						autocorrelation_data(t, n)*beat_alignment_function(b, t, n);
-				end
-			end
-		end
-
-		% need to calculate transition probability from all states to all
-		% other states?????? 
-		for t2 = all_tempos
-			for b2 = all_beat_alignments
-				% new_state = (t2, b2)
-				% this sums the probabilities of going from each of the old states
-				% to the (fixed) new state (t2, b2), ignoring new information
-				trans_prob_t2b2 = 0;
-				for t1 = all_tempos
-					for b1 = all_beat_alignments % oh god
-						% old_state = (t1, b1)
-						P_t1_t2 = tempo_transition_prob(t1, t2);
-						P_b1_t1_t2 = beat_position_transition_prob(b1, t1, b2);
-						trans_prob_t2b2 = trans_prob_t2b2 + ...
-							P_t1_t2*P_b1_t1_t2*current_message(t1, b1);
-					end
-				end
-				transition_probability(t2, b2) = trans_prob_t2b2;
-			end
-		end
+		% Calculate, for each new state X_t,
+		% (sum over all states x_t-1) P(X_t | x_t-1)*current_forward_message(x_t-1)
+		transition_probs = this.compute_transition_probs(this.current_states, ...
+			this.current_probabilities, new_states);
 
 		% now multiply them and make it sum to 1
+		new_probs = observation_probs.*transition_probs;
+		new_probs = new_probs/sum(new_probs);
 
-		sum_updated_probs = 0;
-		for t = all_tempos
-			for b = all_beat_alignments
-				% probability of each state given new observations
-				updated_prob_tb = observation_probability(t, b)*transition_probability(t, b);
-				sum_updated_probs = sum_updated_probs + updated_prob_tb;
-				new_message(t, b) = updated_prob_tb;
+		this.current_states = new_states;
+		this.current_probabilites = new_probs;
+
+	end
+
+
+	% generates all possible model states for the given range of tempos, in samples
+	% XXX OBSERVATION PROBABILITY CALCULATIONS DEPEND ON CORRECT ORDERING OF THE STATES
+	% DO NOT CHANGE THIS FUNCTION WITHOUT FIXING THIS
+	function states = generate_all_states(this, tempos)
+		num_tempos = length(tempos);
+		% conservative estimate of number of states needed. Will increase if
+		% more parameters are added to the model.
+		num_states = num_tempos^2;
+
+		states = cell(num_states, 1);
+		num_states = 0;
+
+		for tempo_idx = 1:length(tempos)
+			tempo = tempos(tempo_idx);
+			% this is with reference to the end of the frame
+			for beat_alignment = 0:tempo-1
+				state = this.state_from_tempo_and_alignment(tempo, beat_alignment);
+				num_states = num_states + 1;
+				states{num_states} = state;
 			end
 		end
 
-		new_message = new_message/sum_updated_probs;
+		% trim returned lists to have length equal to the actual number of states
+		states = states(1:num_states);
 	end
-
-	% uses the prior distribution to generate an initial forward message
-	% P(X_0 | null), i.e. the probability of any state given no information
-	function new_message = generate_initial_forward_message
-		new_message = zeros(num_tempos, num_beat_alignments);
-
-		% EXAMPLE VALUES: FIX
-		all_tempos = 1:1024;
-		all_beat_alignments = 1:1024;
-
-		% for all states
-		for t = all_tempos
-			for b = all_beat_alignments
-				% state = (t, b);
-				new_message(t, b) = tempo_prior_prob(t)*beat_position_prior_prob(b);
-			end
-		end
-
-		% make the whole thing sum to 1 - as some priors are only proportional
-		new_message_sum = sum(sum(new_message));
-		new_message = new_message/new_message_sum;
-	end
-
 end
 
+% transition and observation probability calculation
+methods (Static)
+	function new_probs = compute_transition_probs(old_states, old_probs, new_states)
+		num_new_states = size(new_states, 1);
+		num_old_states = size(old_states, 1);
+
+		% Calculate, for each new state X_t,
+		% (sum over all states x_t-1) P(X_t | x_t-1)*current_forward_message(x_t-1)
+
+		new_probs = zeros(num_new_states, 1);
+
+		for new_state_idx = 1:num_new_states
+			new_state = new_states{new_state_idx};
+
+			% we sum the probabilities of going from each of the old states
+			% to the (fixed) new state (t2, b2), ignoring new information
+			for old_state_idx = 1:num_old_states
+				old_state = old_states{old_state_idx};
+				old_state_prob = old_probs(old_state_idx);
+
+				% prob from old_state to new_state
+				old_new_prob = musical_model.transition_prob(old_state, new_state);
+
+				new_probs(new_state_idx) = new_probs(new_state_idx) + ...
+					old_state_prob*old_new_prob;
+			end
+		end
+		% normalise???
+	end
+
+
+
+	% calculates observations for all possible states under a certain restriction of
+	% which tempos to use.
+
+	% PARAMETERS:
+	% tempos = matrix(num_tempos, 1);
+	% 	is a list of find which tempos in SAMPLES we need to search over.
+	% observations = matrix(feature_window_length, num_features)
+	% 	is a matrix of feature data, windowed for the current frame
+	function probs = compute_observation_probs(observations, states, tempos)
+		num_tempos = size(tempos, 1);
+		num_states = size(states, 1);
+
+		probs = zeros(num_states, 1);
+
+		frame_length = size(observations, 1);
+		num_features = size(observations, 2);
+
+		% first, calculate the autocorrelation function for each feature, and the
+		% beat alignment function for each of the valid tempos.
+
+		% currently the autocorrelation function returns a vector of half the input
+		% length.
+		acf_length = frame_length/2;
+		acf_data = zeros(acf_length, num_features);
+
+		% the beat alignment function is as long as the given tempo (in samples)
+		baf_length = max(tempos);
+		baf_data = zeros(baf_length, num_tempos, num_features);
+
+		% calculate autocorrelation and beat alignment data;
+		for n = 1:num_features
+			feature_frame_n = observations(:, n);
+			frame_n_acf = autocorrelation(feature_frame_n);
+			acf_data(:, n) = frame_n_acf;
+			for tempo_idx = 1:num_tempos
+				tempo_for_baf = tempos(tempo_idx);
+				baf_data(1:tempo_for_baf, tempo_idx, n) = ...
+					beat_alignment_function(feature_frame_n, tempo_for_baf);
+			end
+		end
+
+		% So that we can iterate over the generated states, we create a map of the
+		% set of tempos to their index in the input array
+		tempo_idx_map = containers.Map(tempos', 1:num_tempos);
+
+		for state_idx = 1:num_states
+			curr_state = states{state_idx};
+			state_tempo = curr_state.tempo_samples;
+			% this is with reference to the end of the frame
+			state_beat_alignment = state.beat_alignment;
+
+			tempo_idx = tempo_idx_map(state_tempo);
+			% correct for 1-indexing
+			beat_align_idx = state_beat_alignment + 1;
+
+			% -> currently we just add up all features equally!
+			state_observation_prob = 0;
+			for n = 1:num_features
+				% this is our model assumption. 'Probability' here really means a
+				% proportional measure; the value may not be normalised.
+				feature_observation_prob = acf_data(tempo_idx, n)*...
+					baf_data(beat_align_idx, tempo_idx, n);
+					% times feature_weight(n)?
+				state_observation_prob = state_observation_prob + ...
+					feature_observation_prob;
+			end
+
+			probs(state_idx) = state_observation_prob;
+		end
+	end
+
+end % methods (Static)
 
 end
 

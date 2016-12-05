@@ -172,7 +172,7 @@ methods
 	function time = get_frame_end_time(this, k)
 		time = this.feature_win_time + (k-1)/this.estimate_update_rate;
 	end
-	
+
 	function time = get_frame_start_time(this, k)
 		time = (k-1)/this.estimate_update_rate;
 	end

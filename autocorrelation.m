@@ -32,7 +32,7 @@ function acf = autocorrelation(feature_frame)
 		shifted_frame_power = sqrt(sum(shifted_frame.^2)/half_len);
 		normalised_shifted_frame = shifted_frame/shifted_frame_power;
 
-		acf(shift+1) = sum(normalised_half_frame.*normalised_shifted_frame)/half_len);
+		acf(shift+1) = sum(normalised_half_frame.*normalised_shifted_frame)/half_len;
 	end
 
 	% normalise so that first coefficient is 1, that way we can compare
