@@ -7,7 +7,7 @@
 
 classdef bp_viterbi < handle
 
-properties
+properties (SetAccess = public)
 	% counts the frame number
 	frame_idx;
 
@@ -19,8 +19,8 @@ properties
 	% The probabilities measure the probability that the 'true' (and unobservable)
 	% state of the frame is equal to the corresponding entry in the current_states
 	% vector, given the 'observations' made of the music so far.
-	current_states;
-	current_probabilities;
+	current_states = {};
+	current_probabilities = [];
 
 	winning_states;
 
@@ -35,9 +35,9 @@ properties
 end
 
 methods
-	function initialise(this, params, predictor_name, num_features)
+	function initialise(this, params, name, num_features)
 		this.params = params;
-		this.predictor_name = predictor_name;
+		this.name = name;
 		this.num_features = num_features;
 
 		this.frame_idx = 1;
@@ -54,7 +54,8 @@ methods
 
 		% choose a sparser set of tempos to start with
 		initial_tempos = (min_tempo_samples:2:max_tempo_samples)';
-		this.generate_initial_forward_message(initial_tempos);
+		beat_coarseness = 8;
+		this.generate_initial_forward_message(initial_tempos, beat_coarseness);
 
 		% allocate some space for winning estimates;
 		this.winning_states = cell(100, 1);
@@ -63,8 +64,8 @@ methods
 
 	% uses the prior distribution to generate an initial forward message
 	% P(X_0 | null), i.e. the probability of any state given no information
-	function generate_initial_forward_message(this, initial_tempos)
-		states = this.generate_all_states(initial_tempos);
+	function generate_initial_forward_message(this, initial_tempos, beat_coarseness)
+		states = this.generate_all_states(initial_tempos, beat_coarseness);
 		probs = zeros(size(states));
 
 		for state_idx = 1:length(states)
@@ -99,7 +100,7 @@ methods
 	%	  matrix is 1 row (since it's only one frame's worth of data) by n columns, where
 	%	  n is the number of features. The tempo estimates should be in SAMPLES.
 
-	% feature_data = cell(1, this.num_features)
+	% feature_data = matrix(feature_frame_length, this.num_features)
 	%	  is a 1xn cell matrix containing the raw features, or observations.
 	%	  There is a column in the cell matrix for each feature, and each cell is a
 	%	  (single dimensional) vector of length equal to the feature frame length.
@@ -122,11 +123,15 @@ methods
 			% clusters are in the first column of the cell array
 			tempos_to_search(i) = tempo_clusters{i, 1};
 		end
+		
+		% round tempos to sample values
+		tempos_to_search = round(tempos_to_search);
+		
+		% what if this is empty?
 
 		this.update_forward_message(feature_data, tempos_to_search);
 
 		% find the most likely state
-		most_likely_state = {};
 		highest_state_probability = 0;
 		num_states = size(this.current_states, 1);
 
@@ -142,7 +147,8 @@ methods
 			end
 		end
 
-		this.winning_states(state_idx) = most_likely_state;
+		this.winning_states{this.frame_idx} = most_likely_state;
+		this.frame_idx = this.frame_idx + 1;
 	end
 
 	% Narrows down the search of possible tempos to only a small
@@ -165,20 +171,20 @@ methods
 		% each tempo is tagged with the number of the feature that it comes
 		% from.
 		candidate_tempos = zeros(this.num_features*this.params.max_tempo_peaks, 2);
-		candidate_tempo_idx = 1;
+		num_candidate_tempos = 0;
 
 		for feature_idx = 1:this.num_features
 			tempo_estimates_list = tempo_estimates{feature_idx};
 			for estimate_idx = 1:length(tempo_estimates_list)
-				tempo_estimate = tempo_estimates_list(tempo_estimate);
-				candidate_tempos(candidate_tempo_idx, 1) = tempo_estimate;
-				candidate_tempos(candidate_tempo_idx, 2) = feature_idx;
-
-				candidate_tempo_idx = candidate_tempo_idx + 1;
+				num_candidate_tempos = num_candidate_tempos + 1;
+				
+				tempo_estimate = tempo_estimates_list(estimate_idx);
+				candidate_tempos(num_candidate_tempos, 1) = tempo_estimate;
+				candidate_tempos(num_candidate_tempos, 2) = feature_idx;
 			end
 		end
 		% trim list to its actual length
-		candidate_tempos = candidate_tempos(1:candidate_tempo_idx, :);
+		candidate_tempos = candidate_tempos(1:num_candidate_tempos, :);
 
 		% now group together similar tempo estimates;
 		% use mean shift clustering *BY BPM*.
@@ -188,9 +194,10 @@ methods
 		sample_to_bpm_factor = this.params.feature_sample_rate*60;
 
 		bpm_distance = @(x, y) sqrt(sum(sample_to_bpm_factor.*(1./x - 1./y)).^2);
-		cluster_width = 2; % BPM
+		cluster_width = 4; % BPM
 		clustered_tempos = mean_shift_cluster(candidate_tempos, ...
 			bpm_distance, cluster_width);
+		% what to do if there are no tempos?
 	end
 
 	% Calculate the beat times predicted by this algorithm, after frames have been
@@ -251,7 +258,7 @@ methods
 
 	function output_beat_times(this, data_directory)
 		filename = strcat(data_directory, '/', this.predictor_name, ...
-			this.DATA_OUTPUT_SUFFIX);
+			this.data_output_suffix);
 		outfile = fopen(filename, 'w+');
 
 		for beat_index = 1:length(this.beat_times)
@@ -296,8 +303,12 @@ methods
 		% where K is a normalising constant, so that the sum of
 		% probabilities for each X_t is 1.
 
-		this.current_tempos = tempos;
-		new_states = this.generate_all_states(tempos);
+		if ~isempty(tempos)
+			new_states = this.generate_all_states(tempos, 2);
+		else
+			% just keep states the same if no peaks were picked.
+			new_states = this.current_states;
+		end
 
 		% calculate P(current_observations | X_t) for each X_t that we are
 		% considering. Note that these are proportional: the probability over all
@@ -315,27 +326,30 @@ methods
 		new_probs = new_probs/sum(new_probs);
 
 		this.current_states = new_states;
-		this.current_probabilites = new_probs;
+		this.current_probabilities = new_probs;
 
 	end
 
 
 	% generates all possible model states for the given range of tempos, in samples
-	% XXX OBSERVATION PROBABILITY CALCULATIONS DEPEND ON CORRECT ORDERING OF THE STATES
-	% DO NOT CHANGE THIS FUNCTION WITHOUT FIXING THIS
-	function states = generate_all_states(this, tempos)
+	% PARAMETERS
+	%	tempos: range of tempos to consider. Should be a column vector.
+	%	beat_alignment_granularity: generate a state for every n_th possible
+	%	beat alignment. For all possible states, set this to 1. Can set to
+	%	higher to prevent generating a large number of initial states.
+	function states = generate_all_states(this, tempos, beat_alignment_coarseness)
 		num_tempos = length(tempos);
-		% conservative estimate of number of states needed. Will increase if
+		% vague estimate of number of states needed. Will increase if
 		% more parameters are added to the model.
-		num_states = num_tempos^2;
+		num_states = round(mean(tempos)^2);
 
 		states = cell(num_states, 1);
 		num_states = 0;
 
-		for tempo_idx = 1:length(tempos)
+		for tempo_idx = 1:num_tempos
 			tempo = tempos(tempo_idx);
 			% this is with reference to the end of the frame
-			for beat_alignment = 0:tempo-1
+			for beat_alignment = 0:beat_alignment_coarseness:tempo-1
 				state = this.state_from_tempo_and_alignment(tempo, beat_alignment);
 				num_states = num_states + 1;
 				states{num_states} = state;
@@ -379,7 +393,7 @@ methods (Static)
 
 
 
-	% calculates observations for all possible states under a certain restriction of
+	% calculates observations for a set of states under a certain restriction of
 	% which tempos to use.
 
 	% PARAMETERS:
@@ -394,6 +408,10 @@ methods (Static)
 		probs = zeros(num_states, 1);
 
 		frame_length = size(observations, 1);
+		if mod(frame_length, 2) == 1
+			disp('something fishy goin on');
+		end
+		
 		num_features = size(observations, 2);
 
 		% first, calculate the autocorrelation function for each feature, and the
@@ -428,7 +446,7 @@ methods (Static)
 			curr_state = states{state_idx};
 			state_tempo = curr_state.tempo_samples;
 			% this is with reference to the end of the frame
-			state_beat_alignment = state.beat_alignment;
+			state_beat_alignment = curr_state.beat_alignment;
 
 			tempo_idx = tempo_idx_map(state_tempo);
 			% correct for 1-indexing

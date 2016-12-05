@@ -59,56 +59,35 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 			tp_estimator{n}.output_tempo_phase_data(data_output_directory);
 		end
 	end
-
-	% ==== AGGREGATOR ====
-	% setup the aggregator
-
-	feature_sample_rate = tp_estimator{1}.feature_sample_rate;
-	initial_estimate_time = tp_estimator{1}.feature_win_time;
-
-	estimate_hop_time = initial_estimate_time * ...
-		(1 - tp_estimator{1}.FEATURE_WIN_OVERLAP_PERCENT/100);
-
-	agg = aggregator;
-	agg.initialise(tp_estimator{1}.feature_win_length);
-
-	% feed it each of the windows
-
-	for i = 1:length(tp_estimator{1}.tempo_phase_estimates)
-		agg.add_window(tp_estimator, i);
-		tempo = 60/(agg.curr_tp_estimate(1)/feature_sample_rate);
-		if plot_data == 1
-			figure % new figure
-			hold on
-			scatter(i, tempo, 'b')
-			hold off
+	
+	% Viterbi algorithm
+	
+	num_features = feature1.num_feature_channels;
+	num_feature_frames = tp_estimator{1}.num_feature_frames;
+	params = processing_params;
+	
+	viterbi = bp_viterbi;
+	viterbi.initialise(params, 'Viterwheats', num_features);
+	
+	% iterate over each frame, giving the viterbi algorithm its observations
+	for k = 1:num_feature_frames
+		kth_frame_likely_tempos = cell(1, num_features);
+		kth_frame_features = zeros(params.feature_win_length, num_features);
+		for n = 1:num_features
+			% don't need the phase estimates at this point
+			feature_n_tempo_estimates = tp_estimator{n}.tempo_estimates{k};
+			kth_frame_likely_tempos{1, n} = feature_n_tempo_estimates(:, 1);
+			kth_frame_features(:, n) = tp_estimator{n}.get_feature_frame(k);
 		end
+		
+		viterbi.step_frame(kth_frame_features, kth_frame_likely_tempos);
 	end
+	
+	beat_times = viterbi.compute_beat_times;
 
-	%a = aggregator_demo;
-	%test_windows = [2, 8, 12, 24, 36];
-	%for i=1:length(test_windows)
-		%a.plot_tempo_clustering_demo(agg.hypothesis_data{test_windows(i)}, ...
-		%    agg.estimate_windows{test_windows(i)});
-		%a.plot_phase_cluster_sets(agg.hypothesis_data{test_windows(i)});
-		%display(agg.hypothesis_data{test_windows(i)}.P_p_given_t_at_h);
-	%end
-
-	% calculate beat times
-	beat_times = [];
-	for i = 1:length(agg.tp_outputs)
-		tempo = agg.tp_outputs(i, 1)/feature_sample_rate;
-		phase = agg.tp_outputs(i, 2)/feature_sample_rate;
-		if tempo ~= 0 && phase ~= 0
-			predict_beats_until = initial_estimate_time + i*estimate_hop_time;
-			next_predicted_beat = initial_estimate_time + ...
-				(i - 1)*estimate_hop_time + tempo + phase;
-			while next_predicted_beat < predict_beats_until
-				beat_times(end+1) = next_predicted_beat;
-				next_predicted_beat = next_predicted_beat + tempo;
-			end
-		end
-	end
+	disp(beat_times);
+	
+	error('stop');
 
 	if output_data == 1
 		% write beat times out to an annotation file

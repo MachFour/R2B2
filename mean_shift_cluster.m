@@ -25,6 +25,11 @@ function clusters = mean_shift_cluster(data, dist, max_dist)
 	n = size(data, 1);
 	k = size(data, 2);
 
+	if n == 0
+		clusters = {};
+		return;
+	end
+		
 	if n == 1
 		clusters = {data{1}, data(1, 1:k)};
 		return;

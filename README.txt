@@ -36,9 +36,6 @@ one or several dimensions of data over time
 tempo_phase_estimator - for something that takes in (single dimensional)
 feature data and creates several tempo and phase estimates at regular intervals
 
-beat_predictor - for something that takes in tempo and phase estimates
-over time, aggregates them, and predicts a single most likely future beat time
-
 Concrete classes:
 
 odf_klapuri -
@@ -53,16 +50,13 @@ in a frame of features, finds phase by sliding set of equally spaced impulses
 along the feature frame, and choosing the amount of shift that maximises their
 dot product
 
+bp_viterbi - Uses the Viterbi algorithm to model probabilities of things, which can then
+be used to takes in tempo and phase estimates over time, aggregate them,
+and predict most likely future beat times
+
+
 Helper functions:
 
 autocorrelation.m - Calculates autocorrelation in an improved way
 mel_filter.m - for klapuri's feature, and also MFCC calculation
 beat_alignment_function.m - for phase calculation
-
-*********************
-Aggregation Algorithm
-*********************
-
-tp_cluster.m - data structure for use in clustering
-aggregator.m - class that manages aggregation (hopefully will be made to subclass beat_predictor)
-hypothesis_cluster.m - helper file?

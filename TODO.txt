@@ -1,6 +1,5 @@
 
 Clean up initialisation into constructors
-implement prediction layer using Viterbi Algorithm
 implement weighted phase deviation ODF
 implement chroma-based odf?
 
