@@ -86,8 +86,6 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	beat_times = viterbi.compute_beat_times;
 
 	disp(beat_times);
-	
-	error('stop');
 
 	if output_data == 1
 		% write beat times out to an annotation file

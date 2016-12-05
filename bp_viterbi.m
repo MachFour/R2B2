@@ -19,9 +19,10 @@ properties (SetAccess = public)
 	% The probabilities measure the probability that the 'true' (and unobservable)
 	% state of the frame is equal to the corresponding entry in the current_states
 	% vector, given the 'observations' made of the music so far.
-	current_states = {};
-	current_probabilities = [];
-
+	current_states;
+	current_probabilities;
+	current_tempos;
+	
 	winning_states;
 
 	data_output_suffix = '-beat-times.txt';
@@ -133,12 +134,14 @@ methods
 
 		% find the most likely state
 		highest_state_probability = 0;
+		% arbitrary
+		most_likely_state = this.current_states{1};
 		num_states = size(this.current_states, 1);
 
 		for state_idx = 1:num_states
 			% this is, in theory, the probability of this state being the actual one,
 			% given all observations so far.
-			state = this.current_states(state_idx);
+			state = this.current_states{state_idx};
 			state_probability = this.current_probabilities(state_idx);
 
 			if state_probability > highest_state_probability
@@ -147,6 +150,7 @@ methods
 			end
 		end
 
+		% what if there's no most likely state?
 		this.winning_states{this.frame_idx} = most_likely_state;
 		this.frame_idx = this.frame_idx + 1;
 	end
@@ -234,11 +238,15 @@ methods
 
 			% these should be in seconds.
 			kth_winning_state = this.winning_states{k};
+			if isempty(kth_winning_state)
+				% no beats for this frame?
+				continue;
+			end
 			kth_tempo = kth_winning_state.tempo_period;
 			kth_beat_time = kth_winning_state.beat_location;
 
 			if prev_estimate_time > kth_beat_time || kth_beat_time > estimate_time
-				warning(strcat('Winning beat time estimate for frame %d', ...
+				warning(strcat('Winning beat time estimate for frame %d ', ...
 					'occurs before the end of frame %d!'), k, k-1);
 			end
 
@@ -304,7 +312,8 @@ methods
 		% probabilities for each X_t is 1.
 
 		if ~isempty(tempos)
-			new_states = this.generate_all_states(tempos, 2);
+			new_states = this.generate_all_states(tempos, 4);
+			this.current_tempos = tempos;
 		else
 			% just keep states the same if no peaks were picked.
 			new_states = this.current_states;
@@ -314,7 +323,7 @@ methods
 		% considering. Note that these are proportional: the probability over all
 		% possible observations given some X_t may not sum to 1.
 		observation_probs = this.compute_observation_probs(observations, ...
-			new_states, tempos);
+			new_states, this.current_tempos);
 
 		% Calculate, for each new state X_t,
 		% (sum over all states x_t-1) P(X_t | x_t-1)*current_forward_message(x_t-1)
