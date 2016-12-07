@@ -38,7 +38,9 @@ properties
 	max_lag_samples;
 	min_lag_samples;
 
+	% how many peaks to pick in tpe_autocorrelation and friends
 	max_tempo_peaks;
+	max_phase_peaks;
 
 end % properties
 
@@ -126,7 +128,9 @@ methods
 
 			min_bpm = 35;
 			max_bpm = 320;
+
 			max_tempo_peaks = 8;
+			max_phase_peaks = 4;
 
 			feature_win_time = 5; %seconds
 			feature_win_overlap_percent = 87.5;
@@ -164,6 +168,7 @@ methods
 		params.feature_win_type = feature_win_type;
 
 		params.max_tempo_peaks = max_tempo_peaks;
+		params.max_phase_peaks = max_phase_peaks;
 	end
 
 	% return the audio time (in seconds) that the predictions for feature frame k

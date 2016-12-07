@@ -7,6 +7,7 @@
 function r2b2(audio_filename, audio_directory, data_output_directory)
 
 	plot_data = 0;
+	output_audio = 1;
 
 
 	if nargin < 2
@@ -59,33 +60,37 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 			tp_estimator{n}.output_tempo_phase_data(data_output_directory);
 		end
 	end
-	
+
 	% Viterbi algorithm
-	
+
 	num_features = feature1.num_feature_channels;
 	num_feature_frames = tp_estimator{1}.num_feature_frames;
 	params = processing_params;
-	
+
 	viterbi = bp_viterbi;
 	viterbi.initialise(params, 'Viterwheats', num_features);
-	
+
 	% iterate over each frame, giving the viterbi algorithm its observations
 	for k = 1:num_feature_frames
-		kth_frame_likely_tempos = cell(1, num_features);
+		kth_frame_tp_estimates = cell(1, num_features);
 		kth_frame_features = zeros(params.feature_win_length, num_features);
 		for n = 1:num_features
-			% don't need the phase estimates at this point
-			feature_n_tempo_estimates = tp_estimator{n}.tempo_estimates{k};
-			kth_frame_likely_tempos{1, n} = feature_n_tempo_estimates(:, 1);
+			% just take all the estimates, no clustering.
+			feature_n_tp_estimates = tp_estimator{n}.tempo_phase_estimates{k};
+			% put in a 2 column matrix of tempo and phase
+			if ~isempty(feature_n_tp_estimates)
+				kth_frame_tp_estimates{1, n} = ...
+					[feature_n_tp_estimates(:, 1), feature_n_tp_estimates(:, 3)];
+			end
 			kth_frame_features(:, n) = tp_estimator{n}.get_feature_frame(k);
 		end
-		
-		viterbi.step_frame(kth_frame_features, kth_frame_likely_tempos);
+
+		viterbi.step_frame(kth_frame_features, kth_frame_tp_estimates);
 	end
-	
+
 	beat_times = viterbi.compute_beat_times;
 
-	disp(beat_times);
+
 
 	if output_data == 1
 		% write beat times out to an annotation file
@@ -94,7 +99,12 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 		for timestamp = beat_times
 			fprintf(outfile, '%.3f\n', timestamp);
 		end
-	elseif plot_data == 1
+	else
+		disp('Beat times');
+		disp(beat_times);
+	end
+
+	if plot_data == 1
 		% do scatter plot of all estimates in sample frames
 		for k = sample_frames
 			figure; hold on;
@@ -120,18 +130,20 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 		end
 	end
 
-	% output audio annotations
-	blip_track = mkblips(beat_times, audio_sample_rate, length(audio_data));
+	if output_audio == 1
+		% output audio annotations
+		blip_track = mkblips(beat_times, audio_sample_rate, length(audio_data));
 
-	%mix audio channels together if stereo
-	if size(audio_data, 2) == 2
-		audio_data = ((audio_data(:,1) + audio_data(:,2)) / 2);
+		%mix audio channels together if stereo
+		if size(audio_data, 2) == 2
+			audio_data = ((audio_data(:,1) + audio_data(:,2)) / 2);
+		end
+
+		% mix blips with audio, make blips slightly softer
+		annotated_audio = (3*audio_data + 2*blip_track)/5;
+		annotated_audio_filename = strcat('annotated_', audio_filename);
+		annotated_audio_path = strcat(audio_directory, '/', annotated_audio_filename);
+		audiowrite(annotated_audio_path, annotated_audio, audio_sample_rate);
 	end
-
-	% mix blips with audio, make blips slightly softer
-	annotated_audio = (3*audio_data + 2*blip_track)/5;
-	annotated_audio_filename = strcat('annotated_', audio_filename);
-	annotated_audio_path = strcat(audio_directory, '/', annotated_audio_filename);
-	audiowrite(annotated_audio_path, annotated_audio, audio_sample_rate);
 
 end

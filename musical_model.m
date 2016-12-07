@@ -118,8 +118,11 @@ methods (Static)
 
 		% variance for normal distribution.
 		% Should this be proportional to tempo?
-		ratio_sigma = 0.2;
+		ratio_sigma = 0.01;
 		ratio_prob = exp(-0.5*(log(t2/t1)/ratio_sigma)^2) / sqrt(2*pi*ratio_sigma^2);
+		% klapuri multiplied by the prior but I don't think that's the right
+		% thing to do here.
+		%p = ratio_prob;
 		p = ratio_prob * musical_model.tempo_prior_prob(t2);
 	end
 
