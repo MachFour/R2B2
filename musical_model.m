@@ -95,6 +95,13 @@ classdef musical_model
 % from Klapuri's paper (Equation 22).
 % He takes it from Parncutt (1994) "A perceptual model
 % of pulse salience"
+
+properties (Static)
+	% difference from klapuri's paper: note the t2 down the bottom.
+	lognormal_density = @(x, mu, sigma) = ...
+			exp(-0.5*((log(x) - mu)./sigma).^2)./(t2.*sigma*sqrt(2*pi));
+end
+
 methods (Static)
 
 	function p = tempo_prior_prob(t1)
@@ -103,7 +110,7 @@ methods (Static)
 		scale = 0.55;
 		shape = 0.28;
 		% p = lognpdf(t1, log(scale), shape);
-		p = exp(-1*(log(t1/scale))^2/(2*shape^2)) / (t1*shape*sqrt(2*pi));
+		p = musical_model.lognormal_density(t1, log(scale), shape);
 	end
 
 
@@ -116,14 +123,19 @@ methods (Static)
 		% of the ratio of t1 and t2 - doubling tempo is as likely
 		% as halving it.
 
-		% variance for normal distribution.
-		% Should this be proportional to tempo?
-		ratio_sigma = 0.01;
-		ratio_prob = exp(-0.5*(log(t2/t1)/ratio_sigma)^2) / sqrt(2*pi*ratio_sigma^2);
+		% in fact, what's actually going on (Klapuri doesn't explain), is that we
+		% say that log(t2/t1) is normally distributed with mean 0 and some variance.
+		% This means that t2, given the value of t1, should be lognormally
+		% distributed with mean equal to log(t1), and that variance.
+
+		% Question: what's the variance? Should it be proportional to tempo?
+		ratio_sigma = 0.1;
+		p = musical_model.lognormal_density(t2, log(t1), ratio_sigma);
+
+		%ratio_prob = exp(-0.5*(log(t2/t1)/ratio_sigma)^2) / sqrt(2*pi*ratio_sigma^2);
 		% klapuri multiplied by the prior but I don't think that's the right
 		% thing to do here.
-		%p = ratio_prob;
-		p = ratio_prob * musical_model.tempo_prior_prob(t2);
+		%p = ratio_prob * musical_model.tempo_prior_prob(t2);
 	end
 
 	% transition probability of beat position (B[k-1] = b1, T[k-1] = t1) -> B[k] = b2
