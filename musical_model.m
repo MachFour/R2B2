@@ -96,13 +96,11 @@ classdef musical_model
 % He takes it from Parncutt (1994) "A perceptual model
 % of pulse salience"
 
-properties (Static)
-	% difference from klapuri's paper: note the t2 down the bottom.
-	lognormal_density = @(x, mu, sigma) = ...
-			exp(-0.5*((log(x) - mu)./sigma).^2)./(t2.*sigma*sqrt(2*pi));
-end
-
 methods (Static)
+	% how to normalise this? If density values are above 1, is this a problem?
+	function p = lognormal_density(x, mu, sigma)
+		p = exp(-0.5*((log(x) - mu)./sigma).^2)./(x.*sigma*sqrt(2*pi));
+	end;
 
 	function p = tempo_prior_prob(t1)
 		% parameters for the distribution.
@@ -119,6 +117,9 @@ methods (Static)
 	% measured in seconds
 	% This is taken from Klapuri's paper (equation 21).
 	function p = tempo_transition_prob(t1, t2)
+		if t1 <= 0 || t2 <= 0
+			error('tempo values must be positive');
+		end
 		% first term is a normal distribution as a function
 		% of the ratio of t1 and t2 - doubling tempo is as likely
 		% as halving it.
@@ -127,34 +128,49 @@ methods (Static)
 		% say that log(t2/t1) is normally distributed with mean 0 and some variance.
 		% This means that t2, given the value of t1, should be lognormally
 		% distributed with mean equal to log(t1), and that variance.
+		
+		% ALTHOUGH, the mode of the lognormal distribution is not the same as
+		% the mean, so there's a slight difference between the expected value
+		% and the most likely value. 
+		% The mode of a lognormal distribution with parameters mu and sigma is
+		% exp(mu - sigma^2) = exp(mu)exp(-sigma^2).
+		% So in order to get the mode equal to t1, we set the mu parameter to be 
+		% log(t1)*exp(sigma^2)
 
 		% Question: what's the variance? Should it be proportional to tempo?
-		ratio_sigma = 0.1;
-		p = musical_model.lognormal_density(t2, log(t1), ratio_sigma);
+		sigma = 0.05;
+		mu = log(t1)*exp(sigma^2);
 
-		%ratio_prob = exp(-0.5*(log(t2/t1)/ratio_sigma)^2) / sqrt(2*pi*ratio_sigma^2);
-		% klapuri multiplied by the prior but I don't think that's the right
-		% thing to do here.
-		%p = ratio_prob * musical_model.tempo_prior_prob(t2);
+		p = musical_model.lognormal_density(t2, mu, sigma);
 	end
 
-	% transition probability of beat position (B[k-1] = b1, T[k-1] = t1) -> B[k] = b2
+	% transition probability of beat location (B[k-1] = b1, T[k-1] = t1) -> B[k] = b2
 	% meant to reflect the fact that the expected beat location is
 	% some multiple of t1 seconds after the previous one.
-	% we make the transition probability a normal distribution
-	% centred around the expected beat time.
-	% Unlike the previous one, we don't use a prior, since the prior was
-	% uniform over times
-	function p = beat_position_transition_prob(b1, t1, b2)
-		% choose k to minimise b2 - (b1 + k*t1)
-		k = round((b2 - b1)/t1);
-
+	% we make the transition probability a normal distribution with maximum
+	% equal to the expected beat time. This is b1 + the multiple of t1 that puts
+	% it closest to b2.
+	
+	% question: should this be t2 instead of t1??
+	function p = beat_location_transition_prob(b1, t1, b2)
+		if t1 <= 0
+			error('tempo value must be positive');
+		end
+		
 		% heuristic: 95% of samples lie within 2 standard deviations
 		% of the mean. maybe 95% of beats lie within a quaver (tempo period/8)
 		% of the expected time. then 2*sigma = t1/8
-		beat_sigma = t1/16;
-		% p = normcdf(b2, b1 + k*t1, beat_sigma);
-		p = exp(-0.5*((b2 - (b1 + k*t1))/beat_sigma)^2)/sqrt(2*pi*beat_sigma^2);
+		sigma = t1/16;
+
+		% find the expected beat location given previous data b1, t1.
+		k = round((b2 - b1)/t1);
+		if k < 0
+			% new beat location is before the previous one!
+			p = 0;
+		else
+			% p = normcdf(b2, b1 + k*t1, beat_sigma);
+			p = exp(-0.5*((b2 - (b1 + k*t1))/sigma)^2)/sqrt(2*pi*sigma^2);
+		end
 	end
 
 	% beats can start anywhere in the audio, make this uniform
@@ -215,10 +231,13 @@ methods (Static)
 
 		t2 = new_state.tempo_period;
 		b2 = new_state.beat_location;
+		new_end_time = new_state.frame_end_time;
 
 		% by independence
-		prob = musical_model.tempo_transition_prob(t1, t2) * ...
-			musical_model.beat_position_transition_prob(b1, t1, b2);
+		tempo_prob = musical_model.tempo_transition_prob(t1, t2);
+		beat_location_prob = musical_model.beat_location_transition_prob(b1, t1, ...
+			b2);
+		prob = tempo_prob * beat_location_prob;
 	end
 
 	function prob = prior_prob(state)

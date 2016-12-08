@@ -19,6 +19,11 @@ properties
 	% Note the formula:
 	% beat_location = frame_end_time - beat_alignment/feature_sample_rate
 	beat_alignment;
+	
+	% the ending time of the feature frame for which this state was created.
+	% the beat location should never be greater than this time. (since otherwise
+	% that would be a prediction).
+	frame_end_time;
 
 end % properties
 
@@ -29,18 +34,20 @@ end
 methods
 	% constructor
 	function state = model_state(tempo_period, tempo_samples, beat_location, ...
-		beat_alignment)
+		beat_alignment, frame_end_time)
 		if nargin == 0
 			warning('model_state class constructed with default values');
 			state.tempo_period = 0;
 			state.tempo_samples = 0;
 			state.beat_location = 0;
 			state.beat_alignment = 0;
+			state.frame_end_time = 0;
 		else
 			state.tempo_period = tempo_period;
 			state.tempo_samples = tempo_samples;
 			state.beat_location = beat_location;
 			state.beat_alignment = beat_alignment;
+			state.frame_end_time = frame_end_time;
 		end
 	end
 

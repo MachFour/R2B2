@@ -41,7 +41,7 @@ methods
 		this.name = name;
 		this.num_features = num_features;
 
-		this.frame_idx = 1;
+		this.frame_idx = 0;
 
 
 		% restrict to 50-180 BPM initially - low bpm makes it really
@@ -61,7 +61,7 @@ methods
 		this.current_probabilities = this.initial_forward_message(initial_states);
 
 		% allocate some space for winning estimates;
-		this.winning_states = cell(100, 1);
+		this.winning_states = cell(50, 1);
 
 	end
 
@@ -75,7 +75,8 @@ methods
 		% calculate tempo and absolute beat location in seconds
 		tempo_period = tempo_samples/feature_sample_rate;
 		beat_location = frame_end_time + beat_alignment/feature_sample_rate;
-		s = model_state(tempo_period, tempo_samples, beat_location, beat_alignment);
+		s = model_state(tempo_period, tempo_samples, ...
+			beat_location, beat_alignment, frame_end_time);
 	end
 
 	% gives the Viterbi algorithm a frame of observations (feature data), so that it
@@ -96,6 +97,7 @@ methods
 
 
 	function step_frame(this, feature_data, tempo_phase_estimates)
+		this.frame_idx = this.frame_idx + 1;
 
 		% [OLD NOTES ON CLUSTERING]
 		% these are the tempos that will be searched over
@@ -163,7 +165,7 @@ methods
 			this.most_likely_state(new_states, new_probs);
 
 		% plot(this.current_probabilities);
-		this.frame_idx = this.frame_idx + 1;
+
 	end
 
 
@@ -196,8 +198,6 @@ methods
 			% note the estimates for the final frame may extend slightly over the
 			% end of the audio
 			next_estimate_time = this.params.prediction_time(k+1);
-			% this doesn't mean much if k = 1 but it won't cause any problems
-			prev_estimate_time = this.params.prediction_time(k-1);
 
 			% these should be in seconds.
 			kth_winning_state = this.winning_states{k};
@@ -208,14 +208,18 @@ methods
 			kth_tempo = kth_winning_state.tempo_period;
 			kth_beat_time = kth_winning_state.beat_location;
 
-			if prev_estimate_time > kth_beat_time || kth_beat_time > estimate_time
-				warning(strcat('Winning beat time estimate for frame %d  ', ...
-					'occurs before the end of frame %d!'), k, k-1);
-				% if this happens, we need to add kth_tempo to the kth_beat_time
-				% until we get to after the prev_estimate_time.
+			predicted_beat_time = kth_beat_time;
+			
+			% so we think there's a beat here, but this was some time in the past. 
+			% it may even be before the end of the previous feature frame.
+			% we need to add multiples of the tempo period until we get to after the 
+			% end of the current feature frame time. 
+
+			while predicted_beat_time <= estimate_time
+				predicted_beat_time = predicted_beat_time + kth_tempo;
 			end
 
-			predicted_beat_time = kth_beat_time + kth_tempo;
+			% now output predictions as frame times
 			% do we need to allow for latency?
 			overlap_allowed = 0.01;
 			while predicted_beat_time <= next_estimate_time + overlap_allowed
@@ -349,6 +353,7 @@ methods (Static)
 
 		for new_state_idx = 1:num_new_states
 			new_state = new_states{new_state_idx};
+			new_state_prob = 0;
 
 			% we sum the probabilities of going from each of the old states
 			% to the (fixed) new state (t2, b2), ignoring new information
@@ -356,12 +361,18 @@ methods (Static)
 				old_state = old_states{old_state_idx};
 				old_state_prob = old_probs(old_state_idx);
 
-				% prob from old_state to new_state
-				old_new_prob = musical_model.transition_prob(old_state, new_state);
 
-				new_probs(new_state_idx) = new_probs(new_state_idx) + ...
-					old_state_prob*old_new_prob;
+				if old_state.beat_location <= new_state.beat_location
+					% prob from old_state to new_state
+					transition_prob = ...
+						musical_model.transition_prob(old_state, new_state);
+				else
+					% shortcut, this would come out anyway.
+					transition_prob = 0;
+				end
+				new_state_prob = new_state_prob + transition_prob*old_state_prob;
 			end
+			new_probs(new_state_idx) = new_state_prob;
 		end
 		% normalise? -> no, as transition probabilities are already normalised.
 	end
@@ -440,7 +451,11 @@ methods (Static)
 
 		for state_idx = 1:num_states
 			curr_state = states{state_idx};
-			tempo_idx = idx_for_tempo(curr_state.tempo_samples);
+			curr_tempo = curr_state.tempo_samples;
+			% to index into ACF
+			acf_tempo_idx = curr_tempo + 1;
+			% to index into BAF column
+			baf_tempo_idx = idx_for_tempo(curr_state.tempo_samples);
 			% correct for 1-indexing, and that beat alignment is negative
 			beat_align_idx = -1*curr_state.beat_alignment + 1;
 
@@ -449,9 +464,23 @@ methods (Static)
 			for n = 1:num_features
 				% this is our model assumption. 'Probability' here really means a
 				% proportional measure; the value may not be normalised.
-				observation_prob_for_feature = ...
-					acf_data(tempo_idx, n)*baf_data(beat_align_idx, tempo_idx, n);
-					% times feature_weight(n)?
+				acf_at_tempo = acf_data(acf_tempo_idx, n);
+				
+				% ideas
+% 				acf_at_double_tempo = 0.5*acf_data(floor(curr_tempo/2) + 1, n) + ...
+% 					0.5*acf_data(ceil(curr_tempo/2) + 1, n);
+% 				% if the tempo is fast enough to have half of its value in the
+% 				% acf, increase it by this much
+% 				if 2*curr_tempo <= frame_length/2
+% 					acf_at_half_tempo = acf_data(2*curr_tempo + 1, n);
+% 				else
+% 					acf_at_half_tempo = 1;
+% 				end
+% 	
+				baf_at_tempo_alignment = baf_data(beat_align_idx, baf_tempo_idx, n);
+				observation_prob_for_feature = acf_at_tempo*baf_at_tempo_alignment;
+				% times feature_weight(n)?
+				
 				observation_prob = observation_prob + observation_prob_for_feature;
 			end
 
