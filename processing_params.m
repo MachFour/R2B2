@@ -1,7 +1,7 @@
 
 % holds all the important global parameters for the algorithm
 
-classdef processing_params
+classdef processing_params < handle
 
 properties
 	audio_sample_rate;
@@ -42,9 +42,14 @@ properties
 	max_tempo_peaks;
 	max_phase_peaks;
 
-end % properties
-
-properties (Dependent)
+	
+	
+	%
+	% The following properties depend entirely on the previous ones, but since
+	% the parameters do not change after initalisation, they are precomputed and
+	% stored as normal properties (not dependent ones)
+	%
+	
 	% actual duration of each audio window, after window length has been fixed
 	audio_win_time;
 
@@ -77,7 +82,7 @@ properties (Dependent)
 	first_prediction_time;
 
 
-end % properties (Dependent)
+end % properties
 
 
 methods
@@ -169,6 +174,12 @@ methods
 
 		params.max_tempo_peaks = max_tempo_peaks;
 		params.max_phase_peaks = max_phase_peaks;
+		
+		
+		% precompute dependent features
+		
+		params.set_dependent_features;
+		
 	end
 
 	% return the audio time (in seconds) that the predictions for feature frame k
@@ -179,46 +190,29 @@ methods
 		t = estimate_t0 + (k-1)*estimate_dt;
 	end
 
+	function set_dependent_features(this)
+	
+		this.audio_win_time = this.audio_win_length/this.audio_sample_rate;
 
-	% getters for dependent properties
-	function a = get.audio_win_time(this)
-		a = this.audio_win_length/this.audio_sample_rate;
-	end
-	function r = get.feature_sample_rate(this)
-		r = this.audio_sample_rate*this.feature_upsample_factor/this.audio_hop_size;
-	end
+		this.max_lag = this.max_lag_samples/this.feature_sample_rate;
+	
+		this.min_bpm = 60/this.max_lag;
 
-	function l = get.max_lag(this)
-		l = this.max_lag_samples/this.feature_sample_rate;
-	end
-	function b = get.min_bpm(this)
-		b = 60/this.max_lag;
-	end
+		this.min_lag = this.min_lag_samples/this.feature_sample_rate;
+		
+		this.max_bpm = 60/this.min_lag;
 
-	function l = get.min_lag(this)
-		l = this.min_lag_samples/this.feature_sample_rate;
-	end
-	function b = get.max_bpm(this)
-		b = 60/this.min_lag;
-	end
-	function r = get.tempo_lag_range(this)
-		r = (this.min_lag_samples:this.max_lag_samples)';
-	end
+		this.tempo_lag_range = (this.min_lag_samples:this.max_lag_samples)';
 
-	function t = get.feature_win_time(this)
-		t = this.feature_win_length/this.feature_sample_rate;
-	end
-	function f = get.prediction_rate(this)
-		f = this.feature_sample_rate/this.feature_hop_size;
-	end
+		this.feature_win_time = this.feature_win_length/this.feature_sample_rate;
 
-	function t = get.first_prediction_time(this)
-		t = this.feature_win_time;
-	end
+		this.prediction_rate = this.feature_sample_rate/this.feature_hop_size;
 
-	function t = get.time_between_predictions(this)
-		t = this.feature_hop_size/this.feature_sample_rate;
+		this.first_prediction_time = this.feature_win_time;
+	
+		this.time_between_predictions = this.feature_hop_size/this.feature_sample_rate;
 	end
+	
 
 end % methods
 

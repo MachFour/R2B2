@@ -24,6 +24,7 @@ properties
 	current_tempos;
 
 	winning_states;
+	winning_probabilities;
 
 	data_output_suffix = '-beat-times.txt';
 
@@ -55,13 +56,14 @@ methods
 
 		% choose a sparser set of tempos to start with
 		initial_tempos = (min_tempo_samples:2:max_tempo_samples)';
-		beat_coarseness = 4;
+		beat_coarseness = 6;
 		initial_states = this.generate_all_states(initial_tempos, beat_coarseness);
 		this.current_states = initial_states;
 		this.current_probabilities = this.initial_forward_message(initial_states);
 
-		% allocate some space for winning estimates;
+		% allocate some space for winning estimates and probabilities;
 		this.winning_states = cell(50, 1);
+		this.winning_probabilities = zeros(50, 1);
 
 	end
 
@@ -69,14 +71,8 @@ methods
 	% converts tempo and beat alignment in samples to a model state which
 	% measures. Note that beat alignment is negative
 	function s = create_state(this, tempo_samples, beat_alignment)
-		feature_sample_rate = this.params.feature_sample_rate;
-		frame_end_time = this.params.prediction_time(this.frame_idx);
-
-		% calculate tempo and absolute beat location in seconds
-		tempo_period = tempo_samples/feature_sample_rate;
-		beat_location = frame_end_time + beat_alignment/feature_sample_rate;
-		s = model_state(tempo_period, tempo_samples, ...
-			beat_location, beat_alignment, frame_end_time);
+		s = model_state(this.params, this.frame_idx, ...
+			tempo_samples, beat_alignment);
 	end
 
 	% gives the Viterbi algorithm a frame of observations (feature data), so that it
@@ -161,8 +157,9 @@ methods
 
 		% Now find argmax of the probabilities
 		% what if there's no most likely state?
-		this.winning_states{this.frame_idx} = ...
-			this.most_likely_state(new_states, new_probs);
+		[winning_state, winning_prob] = this.most_likely_state(new_states, new_probs);
+		this.winning_states{this.frame_idx} = winning_state;
+		this.winning_probabilities(this.frame_idx) = winning_prob;
 
 		% plot(this.current_probabilities);
 
@@ -361,15 +358,9 @@ methods (Static)
 				old_state = old_states{old_state_idx};
 				old_state_prob = old_probs(old_state_idx);
 
-
-				if old_state.beat_location <= new_state.beat_location
-					% prob from old_state to new_state
-					transition_prob = ...
+				% prob from old_state to new_state
+				transition_prob = ...
 						musical_model.transition_prob(old_state, new_state);
-				else
-					% shortcut, this would come out anyway.
-					transition_prob = 0;
-				end
 				new_state_prob = new_state_prob + transition_prob*old_state_prob;
 			end
 			new_probs(new_state_idx) = new_state_prob;
@@ -409,7 +400,7 @@ methods (Static)
 		% tempos to index of the beat alignment function table, so we can do lookups
 		% only knowing the tempo value (as found in the state)
 		num_tempos = 0;
-		idx_for_tempo = containers.Map('KeyType', 'uint32', 'ValueType', 'uint32');
+		idx_for_tempo = containers.Map('KeyType', 'int32', 'ValueType', 'uint32');
 		
 		% record longest tempo just to preallocate size of beat alignment function
 		% array. (since the beat alignment function is as long as the given tempo, 
@@ -489,9 +480,9 @@ methods (Static)
 	end
 	
 	
-	function s = most_likely_state(states, probs)
+	function [state, prob] = most_likely_state(states, probs)
 		if isempty(states)
-			s = {};
+			state = {};
 			return
 		end
 		if ~isequal(size(states), size(probs))
@@ -515,7 +506,8 @@ methods (Static)
 			end
 		end
 
-		s = most_likely_state;
+		state = most_likely_state;
+		prob = highest_state_probability;
 	end
 
 end % methods (Static)

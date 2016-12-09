@@ -100,15 +100,31 @@ methods (Static)
 	% how to normalise this? If density values are above 1, is this a problem?
 	function p = lognormal_density(x, mu, sigma)
 		p = exp(-0.5*((log(x) - mu)./sigma).^2)./(x.*sigma*sqrt(2*pi));
-	end;
+	end
+	
+	function p = normal_density(x, mu, sigma)
+		p = exp(-0.5*((   (x) - mu)./sigma).^2)./(1.*sigma*sqrt(2*pi));
+	end
 
 	function p = tempo_prior_prob(t1)
 		% parameters for the distribution.
 		% These are genre dependent! But Klapuri uses these anyway.
-		scale = 0.55;
-		shape = 0.28;
-		% p = lognpdf(t1, log(scale), shape);
-		p = musical_model.lognormal_density(t1, log(scale), shape);
+		%scale = 0.55;
+		%shape = 0.28;
+		%p = musical_model.lognormal_density(t1, log(scale), shape);
+		
+		% From: PREFERRED TEMPO RECONSIDERED - Dirk Moelants
+		%f0 = 125/60; % 125 BPM in Hz
+		%fext = 1./t1; % tempo period in Hz
+		%beta = 8;
+		%fext_2 = fext.^2;
+		%f0_2 = f0^2;
+		%fext_4 = fext.^4;
+		%f0_4 = f0^4;
+		
+		%p = ((f0_2 - fext_2).^2 + beta*fext_2).^-0.5 - (fext_4 + f0_4).^-0.5;
+		
+		p = 1;
 	end
 
 
@@ -138,39 +154,53 @@ methods (Static)
 		% log(t1)*exp(sigma^2)
 
 		% Question: what's the variance? Should it be proportional to tempo?
-		sigma = 0.05;
+		sigma = 0.1;
 		mu = log(t1)*exp(sigma^2);
 
 		p = musical_model.lognormal_density(t2, mu, sigma);
 	end
 
-	% transition probability of beat location (B[k-1] = b1, T[k-1] = t1) -> B[k] = b2
-	% meant to reflect the fact that the expected beat location is
-	% some multiple of t1 seconds after the previous one.
-	% we make the transition probability a normal distribution with maximum
-	% equal to the expected beat time. This is b1 + the multiple of t1 that puts
-	% it closest to b2.
+	% transition probability is meant to reflect the fact that the expected new beat 
+	% location is some multiple of the tempo after the previous one.
+	% This must allow for an arbitrary frame hope size and so we must be able to
+	% calculate the exact number of tempo multiples that are expected.
 	
-	% question: should this be t2 instead of t1??
-	function p = beat_location_transition_prob(b1, t1, b2)
-		if t1 <= 0
+	% The end of the frame will advance by frame_hop_size samples, so the alignment 
+	% of the previous absolute beat time with respect to the new frame end time,
+	% is b1 (which is a negative beat alignment) minus the frame hop size.
+	% We then need to add multiples of t1 to get to a number in the range 
+	% [-t1 + 1, 0]. This is the new expected beat time. This cam be expressed as
+	% b2' = mod(b1 - feature_hop_size, -1*t1) 
+	% (where the return value has the same sign as the divisor)
+	
+	% question: should this use the new tempo instead of the old?
+	function p = beat_location_transition_prob(old_state, new_state)
+		old_tempo = old_state.tempo_samples;
+		old_alignment = old_state.beat_alignment;
+		hop_size = new_state.params.feature_hop_size;
+		feature_sample_rate = new_state.params.feature_sample_rate;
+		
+		if old_tempo <= 0
 			error('tempo value must be positive');
 		end
+		
+		expected_alignment = mod(old_alignment - hop_size, -1*old_tempo);
+		
+		% make the probability a normal distrubution with mean equal to the 
+		% absolute beat location corresponding to the expected alignment
+		expected_beat_loc = new_state.frame_end_time + ...
+			expected_alignment/feature_sample_rate;
+		
+		new_beat_loc = new_state.beat_location;
 		
 		% heuristic: 95% of samples lie within 2 standard deviations
 		% of the mean. maybe 95% of beats lie within a quaver (tempo period/8)
 		% of the expected time. then 2*sigma = t1/8
-		sigma = t1/16;
+		sigma = old_tempo/16;
+		% p = normcdf(b2, b1 + k*t1, beat_sigma);
+		
+		p = musical_model.normal_density(new_beat_loc, expected_beat_loc, sigma);
 
-		% find the expected beat location given previous data b1, t1.
-		k = round((b2 - b1)/t1);
-		if k < 0
-			% new beat location is before the previous one!
-			p = 0;
-		else
-			% p = normcdf(b2, b1 + k*t1, beat_sigma);
-			p = exp(-0.5*((b2 - (b1 + k*t1))/sigma)^2)/sqrt(2*pi*sigma^2);
-		end
 	end
 
 	% beats can start anywhere in the audio, make this uniform
@@ -226,17 +256,13 @@ methods (Static)
 	end
 
 	function prob = transition_prob(old_state, new_state)
-		t1 = old_state.tempo_period;
-		b1 = old_state.beat_location;
-
+		t1 = old_state.tempo_period;		
 		t2 = new_state.tempo_period;
-		b2 = new_state.beat_location;
-		new_end_time = new_state.frame_end_time;
 
 		% by independence
 		tempo_prob = musical_model.tempo_transition_prob(t1, t2);
-		beat_location_prob = musical_model.beat_location_transition_prob(b1, t1, ...
-			b2);
+		beat_location_prob = ...
+			musical_model.beat_location_transition_prob(old_state, new_state);
 		prob = tempo_prob * beat_location_prob;
 	end
 

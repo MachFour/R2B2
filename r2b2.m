@@ -100,6 +100,16 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	else
 		disp('Beat times');
 		disp(beat_times);
+		disp('Winning states');
+		for i = 1:length(viterbi.winning_states)
+			if isa(viterbi.winning_states{i}, 'model_state')
+				fprintf('frame idx: %d, bpm: %.1f, observed time: %.2f, prob: %4g\n', ...
+					viterbi.winning_states{i}.frame_idx, ...
+					viterbi.winning_states{i}.tempo_bpm, ...
+					viterbi.winning_states{i}.beat_location, ...
+					viterbi.winning_probabilities(i));
+			end
+		end
 	end
 
 	if plot_data == 1

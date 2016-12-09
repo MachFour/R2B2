@@ -50,7 +50,8 @@ function baf = beat_alignment_function(frame, tempo_spacing)
 	baf = zeros(tempo_spacing, 1);
 	for shift = 0:tempo_spacing-1
 		shifted_frame = circshift(frame, -shift);
-		baf(shift+1) = sum(shifted_frame.*impulse_train);
+		inner_product = shifted_frame.*impulse_train;
+		baf(shift+1) = sum(inner_product);
 	end;
 
 	%normalise so that all possible beat alignments sum to 1: probability

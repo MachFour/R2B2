@@ -1,10 +1,5 @@
 
-Clean up initialisation into constructors
-implement weighted phase deviation ODF
-implement chroma-based odf?
-
-think about normalising features (to power 1?) before tempo/phase estimation stage
--> OR normalise autocorrelation area and beat alignment area to 1, then confidence is product of heights -> probability.
--> make a 'normalise = 1' option for autocorrelation and beat alignment
-
-use a shorter feature window. But maybe still calculate autocorrelation using previous (non-overlapping) frame?
+- move all parameter references to processing_parameters.m -> set shorter feature window time and overlap (3s, 50%?)
+- make tpe_autocorrelation do clustering, framewise processing, and accept any number of features.
+- make beat alignment more efficient?
+- integrate james's features
