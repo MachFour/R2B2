@@ -154,7 +154,8 @@ methods (Static)
 		% log(t1)*exp(sigma^2)
 
 		% Question: what's the variance? Should it be proportional to tempo?
-		sigma = 0.1;
+		% Or the probability of the last state?
+		sigma = 0.02;
 		mu = log(t1)*exp(sigma^2);
 
 		p = musical_model.lognormal_density(t2, mu, sigma);

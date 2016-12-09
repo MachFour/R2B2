@@ -3,3 +3,5 @@
 - make tpe_autocorrelation do clustering, framewise processing, and accept any number of features.
 - make beat alignment more efficient?
 - integrate james's features
+
+- fixed lag smoothing??
