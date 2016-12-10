@@ -116,7 +116,7 @@ methods
 			% set time for estimate estimates from frame k
 			% to be at the end of that frame
 			% so first frame's estimates correspond to feature_win_time
-			frame_end_time = this.params.frame_end_time(k);
+			frame_end_time = this.params.feature_frame_end_time(k);
 
 			for n = 1:this.num_features
 				curr_tp_estimates = this.tp_estimates{k, n};

@@ -35,11 +35,9 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	num_features = feature1.num_feature_channels;
 
 	tp_estimator = tpe_autocorrelation;
-	tp_estimator.initialise(params, feature1.feature_matrix, 'tpe-acf');
+	tp_estimator.initialise(params, feature1.feature_matrix, 'tpe-acf-multi');
 	tp_estimator.compute_tempo_phase_estimates;
-	if output_data
-		tp_estimator.output_tempo_phase_data(data_output_directory);
-	end
+
 
 	% Viterbi algorithm
 
@@ -62,13 +60,16 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	% DATA OUTPUT
 	%
 
-	if output_data == 1
+	if output_data
 		% write beat times out to an annotation file
 		filename = strrep(audio_filename, '.wav', '.txt');
 		outfile = fopen(strcat(data_output_directory, '/', filename), 'w+');
 		for timestamp = beat_times
 			fprintf(outfile, '%.3f\n', timestamp);
 		end
+		
+		tp_estimator.output_tempo_phase_data(data_output_directory);
+		
 	else
 		disp('Beat times');
 		disp(beat_times);
