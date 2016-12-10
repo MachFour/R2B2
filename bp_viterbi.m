@@ -128,26 +128,26 @@ methods
 			for estimate_idx = 1:size(feature_n_estimates, 1)
 				curr_tp_estimate = feature_n_estimates(estimate_idx, :);
 				tempo_estimate = curr_tp_estimate(1);
-				phase_estimate = curr_tp_estimate(2);
+				alignment_estimate = curr_tp_estimate(3);
 
 				num_new_states = num_new_states + 1;
 				new_states{num_new_states} = ...
-					this.create_state(tempo_estimate, phase_estimate);
+					this.create_state(tempo_estimate, alignment_estimate);
 			end
 		end
 
 		% Trim cell array down to size
 		new_states = new_states(1:num_new_states);
-		
+
 		past_states = this.current_states;
 		past_probabilities = this.current_probabilities;
-		
+
 		% in exceptional circumstances...
 		if isempty(new_states)
 			% reuse our past states again
 			new_states = past_states;
 		end
-		
+
 		new_probs = this.update_forward_message(past_states, past_probabilities, ...
 			new_states, feature_data);
 
@@ -191,10 +191,10 @@ methods
 		for k = 1:num_predictions
 			% output beat predictions using the kth winning tempo/phase
 			% estimate, up to the estimate time of the next frame
-			estimate_time = this.params.prediction_time(k);
+			estimate_time = this.params.estimate_time(k);
 			% note the estimates for the final frame may extend slightly over the
 			% end of the audio
-			next_estimate_time = this.params.prediction_time(k+1);
+			next_estimate_time = this.params.estimate_time(k+1);
 
 			% these should be in seconds.
 			kth_winning_state = this.winning_states{k};
@@ -206,11 +206,11 @@ methods
 			kth_beat_time = kth_winning_state.beat_location;
 
 			predicted_beat_time = kth_beat_time;
-			
-			% so we think there's a beat here, but this was some time in the past. 
+
+			% so we think there's a beat here, but this was some time in the past.
 			% it may even be before the end of the previous feature frame.
-			% we need to add multiples of the tempo period until we get to after the 
-			% end of the current feature frame time. 
+			% we need to add multiples of the tempo period until we get to after the
+			% end of the current feature frame time.
 
 			while predicted_beat_time <= estimate_time
 				predicted_beat_time = predicted_beat_time + kth_tempo;
@@ -276,7 +276,7 @@ methods
 end
 
 methods (Static)
-	
+
 	% uses the prior distribution to generate an initial forward message
 	% P(X_0 | null), i.e. the probability of any state given no information
 	function probs = initial_forward_message(initial_states)
@@ -290,7 +290,7 @@ methods (Static)
 		% make the whole thing sum to 1 - as some priors are only proportional
 		probs = probs/sum(probs);
 	end
-	
+
 	% Compute the forward message of the hidden Markov model, given the most recent
 	% observations. This is a distribution over all possible states.
 	% in other words, do one step of filtering.
@@ -338,7 +338,7 @@ methods (Static)
 		new_probs = observation_probs.*transition_probs;
 		new_probs = new_probs/sum(new_probs);
 	end
-	
+
 	function new_probs = compute_transition_probs(old_states, old_probs, new_states)
 		num_new_states = size(new_states, 1);
 		num_old_states = size(old_states, 1);
@@ -401,12 +401,12 @@ methods (Static)
 		% only knowing the tempo value (as found in the state)
 		num_tempos = 0;
 		idx_for_tempo = containers.Map('KeyType', 'int32', 'ValueType', 'uint32');
-		
+
 		% record longest tempo just to preallocate size of beat alignment function
-		% array. (since the beat alignment function is as long as the given tempo, 
+		% array. (since the beat alignment function is as long as the given tempo,
 		% in samples. So clearly, they won't all be this long, just the slowest is.)
 		longest_tempo_period = 0;
-		
+
 		% create the map
 		for state_idx = 1:num_states
 			state = states{state_idx};
@@ -420,10 +420,10 @@ methods (Static)
 				idx_for_tempo(tempo_of_state) = num_tempos;
 			end
 		end
-		
+
 		baf_data = zeros(longest_tempo_period, num_tempos, num_features);
 
-		% calculate beat alignment data. 
+		% calculate beat alignment data.
 		% Yes I know this is clumsy. If I
 		% implement clustering of tempo and phase in tpe_acf_clustering then
 		% this won't be needed any more, since we can just pass in the value.
@@ -456,7 +456,7 @@ methods (Static)
 				% this is our model assumption. 'Probability' here really means a
 				% proportional measure; the value may not be normalised.
 				acf_at_tempo = acf_data(acf_tempo_idx, n);
-				
+
 				% ideas
 % 				acf_at_double_tempo = 0.5*acf_data(floor(curr_tempo/2) + 1, n) + ...
 % 					0.5*acf_data(ceil(curr_tempo/2) + 1, n);
@@ -467,28 +467,28 @@ methods (Static)
 % 				else
 % 					acf_at_half_tempo = 1;
 % 				end
-% 	
+
 				baf_at_tempo_alignment = baf_data(beat_align_idx, baf_tempo_idx, n);
 				observation_prob_for_feature = acf_at_tempo*baf_at_tempo_alignment;
 				% times feature_weight(n)?
-				
+
 				observation_prob = observation_prob + observation_prob_for_feature;
 			end
 
 			probs(state_idx) = observation_prob;
 		end
 	end
-	
-	
+
+
 	function [state, prob] = most_likely_state(states, probs)
 		if isempty(states)
 			state = {};
 			return
 		end
 		if ~isequal(size(states), size(probs))
-			error('probability and state vectors have different sizes!');	
+			error('probability and state vectors have different sizes!');
 		end
-		
+
 		highest_state_probability = 0;
 		% arbitrary
 		most_likely_state = states{1};

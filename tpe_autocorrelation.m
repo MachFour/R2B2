@@ -11,20 +11,7 @@
 
 classdef tpe_autocorrelation < tempo_phase_estimator
 
-properties (Constant)
-	% how many peaks to pick from the autocorrelation function, per frame
-	MAX_TEMPO_PEAKS = 8;
-	% how many peaks to pick from the beat alignment (phase) function, per frame
-	MAX_PHASE_PEAKS = 4;
-
-
-	% the maximum total number of tempo/phase estimates for each feature
-	% frame is given by MAX_TEMPO_PEAKS*MAX_PHASE_PEAKS
-end
-
 properties
-	autocorrelation_data;
-
 	% intermediate storage of tempo estimates
 	% this is a cell array in the same format as tempo_phase_estimates
 	% but each element of this cell array is a list of tuples of the form
@@ -34,18 +21,10 @@ end
 
 
 methods
-	function initialise(this, feature_data, feature_sample_rate, estimator_name)
-		initialise@tempo_phase_estimator(this, feature_data, feature_sample_rate, estimator_name);
-		this.autocorrelation_data = zeros(this.num_feature_frames, this.feature_win_length/2);
+	function initialise(this, params, feature_matrix, estimator_name)
+		initialise@tempo_phase_estimator(this, params, feature_matrix, estimator_name);
+		this.tempo_estimates = cell(this.num_feature_frames, this.num_features);
 	end
-
-	function print_properties(this)
-		print_properties@tempo_phase_estimator(this);
-		fprintf('Maximum number of tempo estimates per feature frame: \t %d\n', ...
-			this.MAX_TEMPO_PEAKS);
-		fprintf(strcat('Maximum number of phase estimates per tempo estimate, ', ...
-			'per feature frame: \t %d\n'), this.MAX_TEMPO_PEAKS);
-		end
 
 	function compute_tempo_phase_estimates(this)
 		this.compute_tempo_estimates
@@ -56,44 +35,42 @@ methods
 	% and stores them in the intermediate cell array, tempo_estimates
 	function compute_tempo_estimates(this)
 		for k = 1:this.num_feature_frames
+			tempo_list = this.params.tempo_lag_range';
+			% this is a matrix, containing the frames for each feature
+			curr_feature_frame_matrix = this.get_feature_frame(k);
 
-			% go through and calculate autocorrelations for each slice of
-			% this.feature_win_length
+			for n = 1:this.num_features
+				curr_feature_frame = curr_feature_frame_matrix(:, n);
+				acf = autocorrelation(curr_feature_frame);
 
-			% we use the new method of autocorrelation
+				% now pick peaks!
+				% make sure to correct for 1-indexing in arrays
 
-			% it's a column vector
-			curr_feature_frame = this.get_feature_frame(k);
-			acf2 = autocorrelation(curr_feature_frame);
-			this.autocorrelation_data(k, :) = acf2;
+				% note that there may be peaks at smaller lag than max_bpm that
+				% reflect the tatum (semiquaver/quaver) pulse
 
-			% now pick peaks!
-			% make sure to correct for 1-indexing in arrays
+				% MinPeakProminence: necessary vertical descent on both sides
+				% in order to count as a peak
+				% since all values are less than 1, we make this 0.025
 
-			% note that there may be peaks at smaller lag than MAX_BPM that reflect the tatum
-			% (semiquaver/quaver) pulse
+				% MinPeakDistance: horizonal separation between peaks
+				% -> make it equivalent to 2x the maximum allowed tempo
 
-			% MinPeakProminence: necessary vertical descent on both sides
-			% in order to count as a peak
-			% since all values are less than 1, we make this 0.025
+				% don't sort in descending order: find faster tempos first
+				% limit range of allowed tempos to have a minimum of 40BPM
 
-			% MinPeakDistance: horizonal separation between peaks
-			% -> make it equivalent to 2x the maximum allowed tempo
 
-			% don't sort in descending order: find faster tempos first
-			% limit range of allowed tempos to have a minimum of 40BPM
-			[curr_tempo_confidences, curr_tempo_estimates]  = ...
-				findpeaks(this.autocorrelation_data(k, this.tempo_lag_range),  ...
-					this.tempo_lag_range, ...
-					'MinPeakDistance', this.min_lag_samples/2, ...
-					'MinPeakProminence', 0.025, ...
-					'NPeaks', this.MAX_TEMPO_PEAKS, ...
-					'SortStr', 'descend');
+				[tempo_confidences, tempo_peaks]  = ...
+					findpeaks(acf(1+tempo_list), ...
+						tempo_list, ...
+						'MinPeakDistance', this.params.min_lag_samples/2, ...
+						'MinPeakProminence', 0.025, ...
+						'NPeaks', this.params.max_tempo_peaks, ...
+						'SortStr', 'descend');
 
-			% intermediate storage of tempo estimates
-			% (storing the transpose of the two lists is equivalent to storing each
-			% tempo/confidence tuple as a row)
-			this.tempo_estimates{k} = [curr_tempo_estimates', curr_tempo_confidences'];
+				% intermediate storage of tempo estimates
+				this.tempo_estimates{k, n} = [tempo_peaks, tempo_confidences];
+			end
 		end
 	end
 
@@ -103,93 +80,80 @@ methods
 	%%%%%%%%%%%%%%%%%%%%%
 	function compute_phase_estimates(this)
 		for k = 1:this.num_feature_frames
-			curr_tempo_estimates = this.tempo_estimates{k}(:, 1);
-			curr_tempo_confidences = this.tempo_estimates{k}(:, 2);
+			curr_feature_frame_matrix = this.get_feature_frame(k);
+			for n = 1:this.num_features
 
-			% if there were no significant peaks in the autocorrelation, just skip
-			% calculating phase alignments
-			if isempty(curr_tempo_estimates)
-				this.tempo_phase_estimates{k} = [];
-				continue;
-			end;
+				feature_n_estimates = this.tempo_estimates{k, n};
 
-			curr_feature_frame = this.get_feature_frame(k);
+				curr_tempo_estimates = feature_n_estimates(:, 1);
+				curr_tempo_confidences = feature_n_estimates(:, 2);
 
-			% build up rows of estimates for each frame inside the following loop
-			% this avoids having 'null estimates' which happens when you
-			% preallocate the array with zeros() but then the findpeaks
-			% doesn't find as many peaks as the maximum
-			% This could also be done by removing all the zero rows after the
-			% following loop, but I wasn't bothered
-
-			frame_estimates = zeros(1, 4);
-			% same but in seconds
-			frame_estimates_s = zeros(1, 4);
-			estimate_number = 0;
-
-			for tempo_index = 1:length(curr_tempo_estimates)
-				% in samples
-				curr_tempo_estimate = curr_tempo_estimates(tempo_index);
-				curr_tempo_confidence = curr_tempo_confidences(tempo_index);
-
-				if curr_tempo_estimate < this.min_lag_samples/4
-					% that's just too fast, skip this
-					continue;
+				% if there were no significant peaks in the autocorrelation, just skip
+				% calculating phase alignments
+				if isempty(curr_tempo_estimates)
+					this.tempo_phase_estimates{k, n} = [];
+					continue
 				end
 
-				% make an impulse train for each tempo hypothesis,
-				% then slide it along the detection function for one tempo period,
-				% to find where it lines up the best
-				% feature needs to be a column vector
+				curr_feature_frame = curr_feature_frame_matrix(:, n);
 
-				alignment_function = ...
-					beat_alignment_function(curr_feature_frame, curr_tempo_estimate);
+				max_tempo_peaks = this.params.max_tempo_peaks;
+				max_alignment_peaks = this.params.max_phase_peaks;
 
-				% max distance between peaks depends on the tempo
-				% assume that 'off by half a semiquaver' is the same beat
-				% location
-				[phase_confidences, phase_estimates]  = ...
-					findpeaks(alignment_function, ...
-						0:curr_tempo_estimate-1, ...
-						'MinPeakDistance', curr_tempo_estimate/8, ...
-						'NPeaks', this.MAX_PHASE_PEAKS, ...
-						'SortStr', 'descend');
+				frame_n_tp_estimates = zeros(max_tempo_peaks*max_alignment_peaks, 4);
 
-				% make sign negative to reflect that the offsets are calculated
-				% backwards from the end of the frame
+				estimate_number = 0;
 
-				phase_estimates = -1*phase_estimates;
+				for tempo_index = 1:length(curr_tempo_estimates)
+					% in samples
+					curr_tempo_estimate = curr_tempo_estimates(tempo_index);
+					curr_tempo_confidence = curr_tempo_confidences(tempo_index);
 
-				% could calculate and store beat locations here?
-				%beat_locations = zeros(this.feature_win_length, this.MAX_PHASE_PEAKS);
-				num_phase_peaks = length(phase_confidences);
+					if curr_tempo_estimate < this.params.min_lag_samples/4
+						% that's just too fast, skip this
+						continue;
+					end
 
-				% append tempo_phase_estimate tuples to the kth array of the
-				% tempo_phase_estimates cell array
-				for phase_index = 1:num_phase_peaks
-					estimate_number = estimate_number + 1;
-					tp_estimate_tuple = [
-						curr_tempo_estimate, ...
-						curr_tempo_confidence, ...
-						phase_estimates(phase_index), ...
-						phase_confidences(phase_index)
-					];
+					% make an impulse train for each tempo hypothesis,
+					% then slide it along the detection function for one tempo period,
+					% to find where it lines up the best
+					% feature needs to be a column vector
 
-					tp_estimate_tuple_s = [
-						curr_tempo_estimate/this.feature_sample_rate, ...
-						curr_tempo_confidence, ...
-						phase_estimates(phase_index)/this.feature_sample_rate, ...
-						phase_confidences(phase_index)
-					];
+					alignment_function = ...
+						beat_alignment_function(curr_feature_frame, curr_tempo_estimate);
 
-					frame_estimates(estimate_number, :) = tp_estimate_tuple;
-					frame_estimates_s(estimate_number, :) = tp_estimate_tuple_s;
+					% max distance between peaks depends on the tempo
+					% assume that 'off by half a semiquaver' is the same beat
+					% location
+					[alignment_confidences, alignment_peaks]  = ...
+						findpeaks(alignment_function, ...
+							0:curr_tempo_estimate-1, ...
+							'MinPeakDistance', curr_tempo_estimate/8, ...
+							'NPeaks', max_alignment_peaks, ...
+							'SortStr', 'descend');
 
+					% make sign negative to reflect that the offsets are calculated
+					% backwards from the end of the frame
+
+					alignment_peaks = -1*alignment_peaks;
+
+					% append tempo_alignment_estimate tuples to the kth array of the
+					% tempo_alignment_estimates cell array
+					for alignment_index = 1:length(alignment_peaks)
+						estimate_number = estimate_number + 1;
+						frame_n_tp_estimates(estimate_number, :) = [
+							curr_tempo_estimate, ...
+							curr_tempo_confidence, ...
+							alignment_peaks(alignment_index), ...
+							alignment_confidences(alignment_index)
+						];
+					end
 				end
+
+				% trim to size and put it all into the big cell matrix
+				frame_n_tp_estimates = frame_n_tp_estimates(1:estimate_number, :);
+				this.tp_estimates{k, n} = frame_n_tp_estimates;
 			end
-
-			this.tempo_phase_estimates{k} = frame_estimates;
-			this.tempo_phase_estimates_s{k} = frame_estimates_s;
 		end
 	end
 
@@ -199,10 +163,10 @@ methods
 
 	% also do a plot of tempo vs phase; plot different tempi on different
 	% subplots
-	function plot_sample_intermediate_data(this, sample_frames)
+	function plot_sample_intermediate_data(this, sample_frames, feature_idx)
 
 		for sample_frame = sample_frames
-			time_axis = this.get_frame_start_time(sample_frame) + ...
+			time_axis = this.params.feature_frame_start_time(sample_frame) + ...
 				this.feature_time_axis;
 			if sample_frame > this.num_feature_frames
 				warning('Cant plot sample frame %d; there are only %d feature frames\n', ...
@@ -210,7 +174,8 @@ methods
 				continue;
 			end
 
-			curr_frame = this.get_feature_frame(sample_frame);
+			curr_frame_matrix = this.get_feature_frame(sample_frame);
+			curr_frame = curr_frame_matrix(:, feature_idx);
 
 % 			subplot(3, 1, 1);
 
@@ -220,27 +185,28 @@ methods
 % 				(sample_frame-1)*this.feature_hop_size/this.feature_sample_rate));
 % 			xlabel('Time (seconds)');
 
-			acf_data = this.autocorrelation_data(sample_frame, :);
+			acf_data = autocorrelation(curr_frame);
 
 			figure;
 
-			plot((0:length(acf_data)-1)/this.feature_sample_rate, acf_data);
+			plot((0:length(acf_data)-1)/this.params.feature_sample_rate, acf_data);
 			hold on;
-			title(sprintf('ACF: t=%3.2f s', ...
-				this.get_frame_end_time(sample_frame)));
+			title(sprintf('Feature %d ACF: t=%3.2f s', feature_idx, ...
+				this.params.frame_end_time(sample_frame)));
 			xlabel('Lag (s)');
 			ylabel('Similarity');
-			stem(this.min_lag, 1, 'black', 'x');
-			stem(this.max_lag, 1, 'black', 'x');
+			stem(this.params.min_lag, 1, 'black', 'x');
+			stem(this.params.max_lag, 1, 'black', 'x');
 
-			curr_tp_estimates = this.tempo_phase_estimates{sample_frame};
-			% version in seconds
-			curr_tp_estimates_s = this.tempo_phase_estimates_s{sample_frame};
+			curr_tp_estimates = this.tp_estimates{sample_frame, frame_idx};
 
 			% add indications of peaks picked
-			for estimate_idx = 1:size(curr_tp_estimates_s, 1)
-				tempo_estimate = curr_tp_estimates_s(estimate_idx, 1);
+			for estimate_idx = 1:size(curr_tp_estimates, 1)
+				tempo_estimate = curr_tp_estimates(estimate_idx, 1)/...
+					this.params.feature_sample_rate;
+
 				tempo_confidence = curr_tp_estimates_s(estimate_idx, 2);
+
 				if tempo_estimate ~= 0
 					stem(tempo_estimate, tempo_confidence);
 				end
@@ -278,7 +244,7 @@ methods
 
 				plot(time_axis, estimated_beat_locs);
 
-				estimated_period = tempo_estimate/this.feature_sample_rate;
+				estimated_period = tempo_estimate/this.params.feature_sample_rate;
 				estimated_bpm = 60/estimated_period;
 				title(sprintf('Beats: %.1f BPM (%.2f s), confidence = %.2f', ...
 					estimated_bpm, estimated_period, confidence));

@@ -10,48 +10,22 @@
 
 classdef (Abstract) tempo_phase_estimator < handle
 
-properties (Constant)
-	% BPM ranges to allow when detecting tempo
-	MIN_BPM_APPROX = 40;
-	MAX_BPM_APPROX = 320;
-
-	% minimum length of audio to use for tempo estimation at each time point (seconds)
-	% actual length of feature frames will be power of 2 closest to this.
-	FEATURE_WIN_TIME_APPROX = 5; %seconds
-
-	% This can equivalently be specified using the window overlap
-	%TEMPO_UPDATE_FREQUENCY_APPROX = 2; % Hz
-
-	FEATURE_WIN_OVERLAP_PERCENT = 87.5;
-
-	% or maybe use a window that weights recent samples more than older (by a few seconds) samples
-	FEATURE_WIN_TYPE = 'rect';
-
-	% output the tempo and beat alignment values to a text file with the following suffix
-	DATA_OUTPUT_SUFFIX = '-tp-estimates.txt';
-
-end
-
-
 properties
 	% name of this estimator, to use when writing out data files
 	estimator_name;
 
-	% the (single dimensional) feature vector
-	feature_data;
-	% effective sample rate of feature (in Hz)
-	feature_sample_rate;
+	% processing parameters object
+	params;
 
-	% actual window length, after rounding to the nearest
-	% power of 2
-	feature_win_length;
+	% the complete matrix of features for the entire audio length.
+	% Rows index feature samples over time, columns index different features
+	feature_matrix;
 
+	num_feature_samples;
+	num_features;
 
-	% BPM ranges translated to autocorrelation time lag (samples)
-	% derived from {min,max}_bpm_approx respectively, and the feature
-	% sampling rate. Rounded to the nearest integer, of course.
-	max_lag_samples;
-	min_lag_samples;
+	% output tempo and beat alignment estimates to a file with the following suffix
+	data_output_suffix = '-tp-estimates.txt';
 
 	% tempo and beat phase estimates for each feature frame analysed
 	% these are cell arrays: the n'th index of each contains a list of tuples
@@ -65,132 +39,67 @@ properties
 	% the first and third values are in samples, and must be multiplied by the feature
 	% rate in order to get a value in seconds.
 	% the second and fourth values are unitless real numbers
-	tempo_phase_estimates;
-
-	% same as tempo_phase_estimates but in units of seconds rather than
-	% samples
-	tempo_phase_estimates_s;
+	tp_estimates;
 end
 
 properties (Dependent)
-	% BPM ranges translated to autocorrelation time lag (seconds)
-	% these are equivalent to {max,min}_lag*feature_sample_rate,
-	max_lag;
-	min_lag;
-
-	% recomputed min and max bpm after rounding to nearest sample
-	min_bpm;
-	max_bpm;
-
-	% range of allowable tempos (in samples)
-	% this is simply min_lag_samples:max_lag_samples
-	% used to e.g. limit range of peak picking in autocorrelation
-	tempo_lag_range;
-
-	% corresponding time of feature window
-	feature_win_time;
-	% how many samples each frame of features will advance
-	feature_hop_size;
-
 	num_feature_frames;
-
-	% How often tempo and phase is (re)estimated on
-	% a new frame of features. Given a fixed feature_sample_rate,
-	% this is inversely proportional to feature_hop_size
-	estimate_update_rate;
-
-	% useful for translating between samples and time
-	feature_time_axis;
-
 end
 
+
 methods
-	function initialise(this, feature_data, feature_sample_rate, estimator_name)
-		this.estimator_name = estimator_name;
-		if size(feature_data, 2) ~= 1
-			error('feature_data cant be a matrix');
-		end
-		this.feature_data = feature_data;
-		this.feature_sample_rate = feature_sample_rate;
-		% make the actual window length a power of 2
-		this.feature_win_length = ...
-            2^round(log2(this.feature_sample_rate*this.FEATURE_WIN_TIME_APPROX));
-
-		this.tempo_phase_estimates = cell(this.num_feature_frames, 1);
-		this.tempo_phase_estimates_s = cell(this.num_feature_frames, 1);
-
-		this.min_lag_samples = round(feature_sample_rate*60/this.MAX_BPM_APPROX);
-		this.max_lag_samples = round(feature_sample_rate*60/this.MIN_BPM_APPROX);
-	end
-
-	% getters for dependent properties
-	function l = get.max_lag(this)
-		l = this.max_lag_samples/this.feature_sample_rate;
-	end
-	function b = get.min_bpm(this)
-		b = 60/this.max_lag;
-	end
-
-	function l = get.min_lag(this)
-		l = this.min_lag_samples/this.feature_sample_rate;
-	end
-	function b = get.max_bpm(this)
-		b = 60/this.min_lag;
-	end
-	function r = get.tempo_lag_range(this)
-		r = this.min_lag_samples:this.max_lag_samples;
-	end
-
-	function t = get.feature_win_time(this)
-		t = this.feature_win_length/this.feature_sample_rate;
-	end
-	function h = get.feature_hop_size(this)
-		h = this.feature_win_length*(1 - this.FEATURE_WIN_OVERLAP_PERCENT/100);
-	end
-	function f = get.estimate_update_rate(this)
-		f = this.feature_sample_rate/this.feature_hop_size;
-	end
 	function n = get.num_feature_frames(this)
-		n = ceil(length(this.feature_data)/this.feature_hop_size);
+		feature_win_length = this.params.feature_win_length;
+		feature_hop_size = this.params.feature_hop_size;
+		% number of feature frames k, is the smallest number such that
+		%feature_win_length + k*feature_hop_size > num_feature_samples;
+
+		n = ceil((this.num_feature_samples - feature_win_length)/feature_hop_size);
+
 	end
-	function a = get.feature_time_axis(this)
-		a = (1:this.feature_win_length)/this.feature_sample_rate;
+
+	function initialise(this, params, feature_matrix, estimator_name)
+		this.params = params;
+		this.estimator_name = estimator_name;
+		this.feature_matrix = feature_matrix;
+
+		this.num_feature_samples = size(this.feature_matrix, 1);
+		this.num_features = size(this.feature_matrix, 2);
+
+		this.tp_estimates = cell(this.num_feature_frames, this.num_features);
+	end
+
+	% returns the index of the first sample in the kth feature frame, to index into
+	% rows of the featurematrix
+	function i = frame_first_sample_row(this, k)
+		i = (k - 1)*this.params.feature_hop_size + 1;
+	end
+
+	function i = frame_last_sample_row(this, k)
+		i = (k - 1)*this.params.feature_hop_size + this.params.feature_win_length;
 	end
 
 	% returns a frame of feature_win_length samples
 	% padded with zeros if necessary. 1-indexed.
-	function feature_frame = get_feature_frame(this, k)
-		feature_frame = this.feature_data((k - 1)*this.feature_hop_size + 1: ...
-			min(((k - 1)*this.feature_hop_size + this.feature_win_length), end));
-		if length(feature_frame) < this.feature_win_length
-			feature_frame(length(feature_frame+1):this.feature_win_length) = 0;
-		end
+	function f = get_feature_frame(this, k)
+		f = zeros(this.params.feature_win_length, this.num_features);
+
+		frame_data = this.feature_matrix(this.frame_first_sample_row(k): ...
+			min(this.frame_last_sample_row(k), end), :);
+
+		% if there is not enough feature data left to finish the frame, the rest is
+		% just filled with zeros.
+		f(1:size(frame_data, 1), :) = frame_data;
 	end
 
-	% returns the time when frame k ends, in seconds
-	% first frame ends at this.feature_win_time
-	function time = get_frame_end_time(this, k)
-		time = this.feature_win_time + (k-1)/this.estimate_update_rate;
-	end
-
-	function time = get_frame_start_time(this, k)
-		time = (k-1)/this.estimate_update_rate;
-	end
-
-	function print_properties(this)
-		fprintf('Properties for %s:\n', this.estimator_name);
-		fprintf('Feature window time: \t %f s \n', this.feature_win_time);
-		fprintf('Feature window length: \t %d samples\n', this.feature_win_length);
-		fprintf('Feature hop size: %d samples\n', this.feature_hop_size);
-		fprintf('Number of feature frames: \t %d\n', this.num_feature_frames);
-		fprintf('Tempo Update Frequency \t: %3.3f Hz\n', this.estimate_update_rate);
-	end
-
-	% exports the computed data to files
+	% exports the computed data to files, one for each features
 	function output_tempo_phase_data(this, data_directory)
-		filename = strcat(data_directory, '/', this.estimator_name, ...
-			this.DATA_OUTPUT_SUFFIX);
-		outfile = fopen(filename, 'w+');
+		outfile = cell(this.num_features, 1);
+		for n = 1:this.num_features;
+			filename = strcat(data_directory, '/', this.estimator_name, ...
+				sprintf('-feature%d', n), this.data_output_suffix);
+			outfile{n} = fopen(filename, 'w+');
+		end
 
 		output_format_string = strcat(...
 			'frame=%d\t', ...
@@ -201,46 +110,48 @@ methods
 			'phase_confidence=%f\n' ...
 		);
 
+		feature_sample_rate = this.params.feature_sample_rate;
+
 		for k = 1:this.num_feature_frames
 			% set time for estimate estimates from frame k
 			% to be at the end of that frame
-			% so first frame's estimates correspond to FEATURE_TIME
-			frame_end_time = this.get_frame_end_time(k);
-			% here, the tempo and phase estimates have units of seconds
-			curr_tp_estimates = this.tempo_phase_estimates_s{k};
+			% so first frame's estimates correspond to feature_win_time
+			frame_end_time = this.params.frame_end_time(k);
 
-			for estimate_index = 1:size(curr_tp_estimates, 1)
-				% tempo and alignment are expresseed in samples,
-				% convert to time by dividing by feature rate
-				est_tempo = curr_tp_estimates(estimate_index, 1);
-				est_tempo_confidence = curr_tp_estimates(estimate_index, 2);
-				est_phase = curr_tp_estimates(estimate_index, 3);
-				est_phase_confidence = curr_tp_estimates(estimate_index, 4);
+			for n = 1:this.num_features
+				curr_tp_estimates = this.tp_estimates{k, n};
 
-				fprintf(outfile, output_format_string, ...
-					k, ...
-					frame_end_time, ...
-					est_tempo, ...
-					est_tempo_confidence, ...
-					est_phase, ...
-					est_phase_confidence ...
-				);
+				for estimate_index = 1:size(curr_tp_estimates, 1)
+					% tempo and alignment are expresseed in samples,
+					% convert to time by dividing by feature rate
+					est_tempo = curr_tp_estimates(estimate_index, 1)/feature_sample_rate;
+					est_tempo_confidence = curr_tp_estimates(estimate_index, 2);
+					est_phase = curr_tp_estimates(estimate_index, 3)/feature_sample_rate;
+					est_phase_confidence = curr_tp_estimates(estimate_index, 4);
+
+					fprintf(outfile{n}, output_format_string, ...
+						k, ...
+						frame_end_time, ...
+						est_tempo, ...
+						est_tempo_confidence, ...
+						est_phase, ...
+						est_phase_confidence ...
+					);
+				end
 			end
 		end
 	end
 
 end % methods
 
-
-
 methods (Abstract)
 	% populate the tempo_phase_estimate cell array with estimates from the
 	% supplied feature
-	compute_tempo_phase_estimates(this)
+	compute_tempo_phase_estimates(this, frame_idx)
 
 	% plots relevant intermediate processing data for the given sample frames
 	% e.g. the graph which is peak picked to choose a tempo estimate.
-	plot_sample_intermediate_data(this, sample_frames)
+	plot_sample_intermediate_data(this, sample_frames, feature_idx)
 
 end % methods (Abstract)
 

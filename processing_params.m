@@ -39,17 +39,19 @@ properties
 	min_lag_samples;
 
 	% how many peaks to pick in tpe_autocorrelation and friends
+	% the maximum total number of tempo/phase estimates for each feature
+	% frame is given by MAX_TEMPO_PEAKS*MAX_PHASE_PEAKS
 	max_tempo_peaks;
 	max_phase_peaks;
 
-	
-	
+
+
 	%
 	% The following properties depend entirely on the previous ones, but since
 	% the parameters do not change after initalisation, they are precomputed and
 	% stored as normal properties (not dependent ones)
 	%
-	
+
 	% actual duration of each audio window, after window length has been fixed
 	audio_win_time;
 
@@ -70,16 +72,12 @@ properties
 	% corresponding time of feature window
 	feature_win_time;
 
-	% How often tempo and phase is (re)estimated on
-	% a new frame of features. Given a fixed feature_sample_rate,
-	% this is inversely proportional to feature_hop_size
-	prediction_rate;
+	% How often tempo and phase is (re)estimated on a new frame of features.
+	% Given a fixed feature_sample_rate, this is proportional to feature_hop_size
+	time_between_estimates;
 
-	% inverse of prediction rate
-	time_between_predictions;
-
-	% how long until the first prediction is output by the algorithm, in audio terms
-	first_prediction_time;
+	% how long until the first estimate is output by the algorithm, in audio terms
+	first_estimate_time;
 
 
 end % properties
@@ -174,45 +172,55 @@ methods
 
 		params.max_tempo_peaks = max_tempo_peaks;
 		params.max_phase_peaks = max_phase_peaks;
-		
-		
+
+
 		% precompute dependent features
-		
+
 		params.set_dependent_features;
-		
+
 	end
 
-	% return the audio time (in seconds) that the predictions for feature frame k
+	% return the audio time (in seconds) that the estimates for feature frame k
 	% will be made. Equivalently, it is the end time of the kth feature frame.
-	function t = prediction_time(this, k)
-		estimate_t0 = this.first_prediction_time;
-		estimate_dt = this.time_between_predictions;
-		t = estimate_t0 + (k-1)*estimate_dt;
+	function t = estimate_time(this, k)
+		t = this.feature_frame_end_time(k);
+	end
+
+	% returns the time when frame k ends, in seconds
+	% first frame ends at this.feature_win_time
+	function t = feature_frame_end_time(this, k)
+		t = this.feature_win_time + (k-1)*this.time_between_estimates;
+	end
+
+	function t = feature_frame_start_time(this, k)
+		t = (k-1)*this.time_between_estimates;
+	end
+
+	function a = feature_time_axis(this)
+		a = (1:this.feature_win_length)/this.feature_sample_rate;
 	end
 
 	function set_dependent_features(this)
-	
+
 		this.audio_win_time = this.audio_win_length/this.audio_sample_rate;
 
 		this.max_lag = this.max_lag_samples/this.feature_sample_rate;
-	
+
 		this.min_bpm = 60/this.max_lag;
 
 		this.min_lag = this.min_lag_samples/this.feature_sample_rate;
-		
+
 		this.max_bpm = 60/this.min_lag;
 
-		this.tempo_lag_range = (this.min_lag_samples:this.max_lag_samples)';
+		this.tempo_lag_range = (this.min_lag_samples:this.max_lag_samples);
 
 		this.feature_win_time = this.feature_win_length/this.feature_sample_rate;
 
-		this.prediction_rate = this.feature_sample_rate/this.feature_hop_size;
+		this.first_estimate_time = this.feature_win_time;
 
-		this.first_prediction_time = this.feature_win_time;
-	
-		this.time_between_predictions = this.feature_hop_size/this.feature_sample_rate;
+		this.time_between_estimates = this.feature_hop_size/this.feature_sample_rate;
 	end
-	
+
 
 end % methods
 

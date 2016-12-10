@@ -63,7 +63,7 @@ methods
 
 		this.tempo_bpm = 60/this.tempo_period;
 
-		this.frame_end_time = this.params.prediction_time(this.frame_idx);
+		this.frame_end_time = this.params.estimate_time(this.frame_idx);
 
 		% note this is negative as beat alignment is defined to be negative
 		offset_seconds = this.beat_alignment/this.params.feature_sample_rate;
