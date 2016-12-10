@@ -117,7 +117,7 @@ function clusters = mean_shift_dict_cluster(data, distance, min_separation)
 		% here, j is equal to the index of the last successfully processed key 
 		% now move to the next cluster
 		i = i + 1;
-		
+
 		% make sure to save the cluster!
 		clusters(cluster_i_mean) = values_in_cluster;
 

@@ -7,7 +7,7 @@ classdef model_state < handle
 properties
 	% processing_params, object
 	params;
-	
+
 	% tempo period (in seconds): i.e. time between beats
 	tempo_period;
 	% tempo period (in samples). Related to tempo_period by the feature_sample_rate,
@@ -21,55 +21,55 @@ properties
 	% number of the frame for which this state was made. Starts at zero for
 	% states in the prior forward message, so states made after the first
 	% feature frame is observed have an index of 1.
-	frame_idx;
-	
-	
-	
+	frame_number;
+
+
+
 	frame_end_time;
-	
+
 	tempo_bpm;
-	
+
 	% time when the latest beat was observed (assuming this state's tempo etc.)
-	% in the current frame. Measured in absolute time, in seconds. 
+	% in the current frame. Measured in absolute time, in seconds.
 	% beat_location = frame_end_time - beat_alignment/feature_sample_rate
 	beat_location;
 end
 
 methods
 	% constructor
-	function state = model_state(params, frame_idx, tempo_samples, beat_alignment)
+	function state = model_state(params, frame_number, tempo_samples, beat_alignment)
 		if nargin == 0
 			warning('model_state class constructed with default/null values');
 			state.params = {};
-			state.frame_idx = 0;
+			state.frame_number = 0;
 			state.tempo_samples = 0;
 			state.beat_alignment = 0;
-			
+
 		else
 			state.params = params;
-			state.frame_idx = frame_idx;
+			state.frame_number = frame_number;
 			state.tempo_samples = tempo_samples;
 			state.beat_alignment = beat_alignment;
 		end
-			
+
 		% set dependent properties
-		
+
 		state.set_dependent_properties;
 	end
-	
+
 	function set_dependent_properties(this)
-			
+
 		this.tempo_period = this.tempo_samples/this.params.feature_sample_rate;
 
 		this.tempo_bpm = 60/this.tempo_period;
 
-		this.frame_end_time = this.params.estimate_time(this.frame_idx);
+		this.frame_end_time = this.params.estimate_time(this.frame_number);
 
 		% note this is negative as beat alignment is defined to be negative
 		offset_seconds = this.beat_alignment/this.params.feature_sample_rate;
 		this.beat_location = this.frame_end_time + offset_seconds;
 	end
-				
+
 end % methods
 
 end

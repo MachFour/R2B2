@@ -92,6 +92,28 @@ methods
 		f(1:size(frame_data, 1), :) = frame_data;
 	end
 
+	% gets the feature frame that ends right before the one returned by
+	% this.get_feature_frame(k) begins. This is useful for doing the
+	% autocorrelation, which need to slide back over previous data.
+	% For early frames, there won't be enough samples to get a previous
+	% nonoverlapping frame. In this case, autocorrelation has to be done without
+	% previous data. An empty matrix will be returned.
+	function f = get_prev_nonoverlapping_frame(this, k)
+		feature_win_length = this.params.feature_win_length;
+		current_frame_start_idx = this.frame_first_sample_row(k);
+
+		prev_frame_start_idx = current_frame_start_idx - 1 - feature_win_length;
+
+		if prev_frame_start_idx <= 0
+			% not enough previous samples
+			f = [];
+		else
+			prev_frame_rows = prev_frame_start_idx + (1:feature_win_length);
+			f = this.feature_matrix(prev_frame_rows, :);
+		end
+	end
+
+
 	% exports the computed data to files, one for each features
 	function output_tempo_phase_data(this, data_directory)
 		outfile = cell(this.num_features, 1);

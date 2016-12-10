@@ -161,7 +161,7 @@ methods
 				this.lambda*this.LP_gain*abs_diff_mfccs(:, 1:this.num_feature_mfccs);
 		end
 	end
-	
+
 	function n = get.num_feature_mfccs(this)
 		n = this.num_feature_channels;
 	end

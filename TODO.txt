@@ -1,7 +1,8 @@
-
-- move all parameter references to processing_parameters.m -> set shorter feature window time and overlap (3s, 50%?)
-- make tpe_autocorrelation do clustering, framewise processing, and accept any number of features.
+- make tpe_autocorrelation do clustering and framewise processing
 - make beat alignment more efficient?
 - integrate james's features
+- how to weight features
+- tuning of model parameters
+- some sort of meter variable?
 
 - fixed lag smoothing??

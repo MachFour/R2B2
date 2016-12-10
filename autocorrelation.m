@@ -1,42 +1,54 @@
 % autocorrelation.m
-% calculates the autocorrelation of a feature frame
-% by splitting it in half, sliding the second half back across the first
-% half, and computing the inner product of the two.
-% The frame is first normalised to have unit power.
+% calculates the autocorrelation of a feature frame, optionally using an
+% equal-length frame of previous samples to slide it back against.
+% RMS power is normalised to 1 (but mean is not subtracted)
+% Both input should be column vectors
 
 % Author: Max Fisher
 
-function acf = autocorrelation(feature_frame)
-	len = length(feature_frame);
-	if mod(len, 2) ~= 0
-		warning('Autocorrelation frame is an odd length, can''t split in half');
+function acf = autocorrelation(data_frame, prev_samples)
+	data_len = length(data_frame);
+	if data_len ~= size(data_frame, 1)
+		warning('data frame is probably not a column vector!');
 	end
 
-	half_len = len/2;
+	use_prev_samples = 0;
 
-	% normalise RMS power to 1 (not mean zero)
-	% -> but do normalisation inside the loop, since every half_len slice of the
-	% feature frame has a different power
+	if nargin == 2
+		len_prev = length(prev_samples);
+		if data_len == len_prev
+			use_prev_samples = 1;
+		else
+			warning('previous samples are not of same length as data; ignoring.');
+		end
+	end
 
-	% this is what we'll shift back and compare against the whole frame.
-	% when the shift is zero, the second half of the frame is compared against itself.
-	half_frame = feature_frame(half_len + 1: end);
 	% since this is constant, we can normalise its power outside the loop
-	half_frame_power = sqrt(sum(half_frame.^2)/half_len);
-	normalised_half_frame = half_frame/half_frame_power;
+	data_frame_power = sqrt(sum(data_frame.^2)/data_len);
+	normalised_data_frame = data_frame/data_frame_power;
 
-	acf = zeros(size(half_frame));
+	acf = zeros(data_len, 1);
 
-	for shift = 0:half_len-1
-		shifted_frame = feature_frame(half_len - shift + 1: end - shift);
-		shifted_frame_power = sqrt(sum(shifted_frame.^2)/half_len);
+	% compound_frame is what we'll take a shifting window of, to compare with the 
+	% data frame. When the shift is zero, the data frame is just prepended with zeros.
+
+	if use_prev_samples
+		compound_frame = [prev_samples; data_frame];
+	else
+		% replace prev samples with zeros
+		compound_frame = [zeros(data_len, 1); data_frame];
+	end
+
+	for shift = 0:data_len-1
+		shifted_frame = compound_frame(data_len - shift + 1: end - shift);
+		shifted_frame_power = sqrt(sum(shifted_frame.^2)/data_len);
 		normalised_shifted_frame = shifted_frame/shifted_frame_power;
 
-		acf(shift+1) = sum(normalised_half_frame.*normalised_shifted_frame)/half_len;
+		acf(shift+1) = sum(normalised_data_frame.*normalised_shifted_frame)/data_len;
 	end
 
 	% normalise so that first coefficient is 1, that way we can compare
 	% between different autocorrelations
-	% -> the RMS power normalisation in the previous step makes this unnecessary
-	%acf = acf/acf(1);
+	% -> the RMS power normalisation in the previous step makes this
+	% unnecessary.
 end

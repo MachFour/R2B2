@@ -91,7 +91,7 @@ methods
 	% audio_win_time
 	% 	is the approximate time of audio to use for windowing.
 	% 	 Window size in samples will be rounded to the nearest power of 2.
-	% audio_win_overlap_percent
+	% audio_win_overlap_proportion
 	% 	is how much each window will overlap with each other window;
 	% 	each audio sample might be contained in more than one frame
 	% audio_win_type
@@ -103,7 +103,7 @@ methods
 	% 	is the approximate length of audio to use for tempo estimation at each time
 	% 	point (in seconds). The actual length of feature frames will be the closest
 	% 	power of 2 to this number.
-	% feature_win_overlap_percent
+	% feature_win_overlap_proportion
 	% 	defines how much feature frames overlap
 	% feature_win_type
 	% 	is the windowing method used to create feature frames from the continuous
@@ -114,10 +114,10 @@ methods
 	% 	is how many tempo peaks to pick, per feature, which computing tempo estimates
 	function params = processing_params( ...
 			audio_sample_rate, ...
-			audio_win_time, audio_win_overlap_percent, audio_win_type, ...
-			feature_win_time, feature_win_overlap_percent, feature_win_type, ...
+			audio_win_time, audio_win_overlap_proportion, audio_win_type, ...
+			feature_win_time, feature_win_overlap_proportion, feature_win_type, ...
 			feature_upsample_factor, ...
-			min_bpm, max_bpm, max_tempo_peaks ...
+			min_bpm, max_bpm, max_tempo_peaks, max_phase_peaks ...
 		)
 
 		% default values
@@ -126,7 +126,7 @@ methods
 			audio_sample_rate = 44100;
 			% (the following three values are commonly used in speech processing)
 			audio_win_time = 20/1000; %seconds,
-			audio_win_overlap_percent = 50;
+			audio_win_overlap_proportion = 0.5;
 			audio_win_type = @hann;
 
 			min_bpm = 35;
@@ -135,8 +135,8 @@ methods
 			max_tempo_peaks = 8;
 			max_phase_peaks = 4;
 
-			feature_win_time = 5; %seconds
-			feature_win_overlap_percent = 87.5;
+			feature_win_time = 3; %seconds
+			feature_win_overlap_proportion = 0.75;
 			% or maybe use a window that weights recent samples more than older (by a
 			% few seconds) samples
 			feature_win_type = 'rect';
@@ -146,12 +146,11 @@ methods
 
 		% stuff needed to calculate other properties
 		audio_win_length = 2^round(log2(audio_sample_rate*audio_win_time));
-		audio_hop_size = round(audio_win_length*(1 - audio_win_overlap_percent/100));
+		audio_hop_size = round(audio_win_length*(1 - audio_win_overlap_proportion));
 
 		feature_sample_rate = audio_sample_rate*feature_upsample_factor/audio_hop_size;
 		feature_win_length = 2^round(log2(feature_sample_rate*feature_win_time));
-		feature_hop_size = round( ...
-			feature_win_length*(1 - feature_win_overlap_percent/100));
+		feature_hop_size = round(feature_win_length*(1-feature_win_overlap_proportion));
 
 		% rounding of supplied approximate values
 		params.min_lag_samples = round(feature_sample_rate*60/max_bpm);

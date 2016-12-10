@@ -101,7 +101,7 @@ methods (Static)
 	function p = lognormal_density(x, mu, sigma)
 		p = exp(-0.5*((log(x) - mu)./sigma).^2)./(x.*sigma*sqrt(2*pi));
 	end
-	
+
 	function p = normal_density(x, mu, sigma)
 		p = exp(-0.5*((   (x) - mu)./sigma).^2)./(1.*sigma*sqrt(2*pi));
 	end
@@ -112,7 +112,7 @@ methods (Static)
 		%scale = 0.55;
 		%shape = 0.28;
 		%p = musical_model.lognormal_density(t1, log(scale), shape);
-		
+
 		% From: PREFERRED TEMPO RECONSIDERED - Dirk Moelants
 		%f0 = 125/60; % 125 BPM in Hz
 		%fext = 1./t1; % tempo period in Hz
@@ -121,9 +121,9 @@ methods (Static)
 		%f0_2 = f0^2;
 		%fext_4 = fext.^4;
 		%f0_4 = f0^4;
-		
+
 		%p = ((f0_2 - fext_2).^2 + beta*fext_2).^-0.5 - (fext_4 + f0_4).^-0.5;
-		
+
 		p = 1;
 	end
 
@@ -144,7 +144,7 @@ methods (Static)
 		% say that log(t2/t1) is normally distributed with mean 0 and some variance.
 		% This means that t2, given the value of t1, should be lognormally
 		% distributed with mean equal to log(t1), and that variance.
-		
+
 		% ALTHOUGH, the mode of the lognormal distribution is not the same as
 		% the mean, so there's a slight difference between the expected value
 		% and the most likely value. 
@@ -155,7 +155,7 @@ methods (Static)
 
 		% Question: what's the variance? Should it be proportional to tempo?
 		% Or the probability of the last state?
-		sigma = 0.02;
+		sigma = 0.025;
 		mu = log(t1)*exp(sigma^2);
 
 		p = musical_model.lognormal_density(t2, mu, sigma);
@@ -165,7 +165,7 @@ methods (Static)
 	% location is some multiple of the tempo after the previous one.
 	% This must allow for an arbitrary frame hope size and so we must be able to
 	% calculate the exact number of tempo multiples that are expected.
-	
+
 	% The end of the frame will advance by frame_hop_size samples, so the alignment 
 	% of the previous absolute beat time with respect to the new frame end time,
 	% is b1 (which is a negative beat alignment) minus the frame hop size.
@@ -173,33 +173,57 @@ methods (Static)
 	% [-t1 + 1, 0]. This is the new expected beat time. This cam be expressed as
 	% b2' = mod(b1 - feature_hop_size, -1*t1) 
 	% (where the return value has the same sign as the divisor)
-	
-	% question: should this use the new tempo instead of the old?
+
 	function p = beat_location_transition_prob(old_state, new_state)
-		old_tempo = old_state.tempo_samples;
-		old_alignment = old_state.beat_alignment;
 		hop_size = new_state.params.feature_hop_size;
 		feature_sample_rate = new_state.params.feature_sample_rate;
-		
-		if old_tempo <= 0
+
+		old_tempo = old_state.tempo_samples;
+		old_alignment = old_state.beat_alignment;
+
+		new_tempo = new_state.tempo_samples;
+
+
+		% variance in beat location transition prob: 
+		% If the tempo hasn't changed, the difference in beat locations should be 
+		% almost exactly a multiple of the tempo. Assume that maybe 95% of intervals 
+		% between beats at the same tempo lie within a quaver (tempo period/8) of the
+		% ideally expected time.  
+
+		% for samples from a normal distribution, it is  expected that 95% of them 
+		% lie within 2 standard deviations of its mean. Then 2*sigma = tempo_period/8
+
+		% If the old and new tempos are different, it is not so clear what to
+		% do. Which tempo period should we take?
+		% For now, just take the average. This may be a terrible hack - but it has the 
+		% interpretation of a gradually changing tempo, maybe.
+
+		tempo = new_tempo;
+		tempo_period = tempo/feature_sample_rate;
+		tempo_percent_change = abs(old_tempo - new_tempo)/old_tempo;
+
+		if tempo <= 0
 			error('tempo value must be positive');
 		end
-		
-		expected_alignment = mod(old_alignment - hop_size, -1*old_tempo);
-		
+
+		% Rather than 1/16 of the tempo, use the percentage change in tempo,
+		% times the tempo. (This becomes the absolute difference in tempo
+		% times).
+
+		sigma = tempo_period/16;
+		if tempo_percent_change > 1/16
+			sigma = sigma*(1+tempo_percent_change);
+		end
+
+		expected_alignment = mod(old_alignment - hop_size, -tempo);
+
 		% make the probability a normal distrubution with mean equal to the 
 		% absolute beat location corresponding to the expected alignment
 		expected_beat_loc = new_state.frame_end_time + ...
 			expected_alignment/feature_sample_rate;
-		
+
 		new_beat_loc = new_state.beat_location;
-		
-		% heuristic: 95% of samples lie within 2 standard deviations
-		% of the mean. maybe 95% of beats lie within a quaver (tempo period/8)
-		% of the expected time. then 2*sigma = t1/8
-		sigma = old_tempo/16;
-		% p = normcdf(b2, b1 + k*t1, beat_sigma);
-		
+
 		p = musical_model.normal_density(new_beat_loc, expected_beat_loc, sigma);
 
 	end

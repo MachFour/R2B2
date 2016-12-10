@@ -29,7 +29,7 @@ function clusters = mean_shift_cluster(data, dist, max_dist)
 		clusters = {};
 		return;
 	end
-		
+
 	if n == 1
 		clusters = {data{1}, data(1, 1:k)};
 		return;

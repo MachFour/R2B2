@@ -9,7 +9,7 @@ classdef bp_viterbi < handle
 
 properties
 	% counts the frame number
-	frame_idx;
+	frame_number;
 
 	% each frame, we calculate the probability that the 'state' (i.e. tempo, beat
 	% location, meter, etc ...) of the music in this frame is one of a set of
@@ -42,7 +42,7 @@ methods
 		this.name = name;
 		this.num_features = num_features;
 
-		this.frame_idx = 0;
+		this.frame_number = 0;
 
 
 		% restrict to 50-180 BPM initially - low bpm makes it really
@@ -71,7 +71,7 @@ methods
 	% converts tempo and beat alignment in samples to a model state which
 	% measures. Note that beat alignment is negative
 	function s = create_state(this, tempo_samples, beat_alignment)
-		s = model_state(this.params, this.frame_idx, ...
+		s = model_state(this.params, this.frame_number, ...
 			tempo_samples, beat_alignment);
 	end
 
@@ -93,7 +93,7 @@ methods
 
 
 	function step_frame(this, feature_data, tempo_phase_estimates)
-		this.frame_idx = this.frame_idx + 1;
+		this.frame_number = this.frame_number + 1;
 
 		% [OLD NOTES ON CLUSTERING]
 		% these are the tempos that will be searched over
@@ -158,8 +158,8 @@ methods
 		% Now find argmax of the probabilities
 		% what if there's no most likely state?
 		[winning_state, winning_prob] = this.most_likely_state(new_states, new_probs);
-		this.winning_states{this.frame_idx} = winning_state;
-		this.winning_probabilities(this.frame_idx) = winning_prob;
+		this.winning_states{this.frame_number} = winning_state;
+		this.winning_probabilities(this.frame_number) = winning_prob;
 
 		% plot(this.current_probabilities);
 
@@ -181,12 +181,12 @@ methods
 	% Predictions of future beat times are done by adding multiples of the tempo
 	% period to the beat location, until the end of the next frame is reached.
 	function beat_times = compute_beat_times(this)
-		num_predictions = size(this.winning_states, 1);
+		num_predictions = this.frame_number;
 
 		% assume 3 beats predicted per row of estimate data,
 		% just to be able to preallocate something
 		beat_times = zeros(3*num_predictions, 1);
-		beat_index = 1;
+		num_beats_predicted = 0;
 
 		for k = 1:num_predictions
 			% output beat predictions using the kth winning tempo/phase
@@ -199,6 +199,7 @@ methods
 			% these should be in seconds.
 			kth_winning_state = this.winning_states{k};
 			if isempty(kth_winning_state)
+				warning('no winning state in frame %d (%.1f s)', k, estimate_time);
 				% no beats for this frame?
 				continue;
 			end
@@ -220,14 +221,15 @@ methods
 			% do we need to allow for latency?
 			overlap_allowed = 0.01;
 			while predicted_beat_time <= next_estimate_time + overlap_allowed
-				beat_times(beat_index) = predicted_beat_time;
-				beat_index = beat_index + 1;
+				num_beats_predicted = num_beats_predicted + 1;
+				beat_times(num_beats_predicted) = predicted_beat_time;
+
 				% try to predict another beat time
 				predicted_beat_time = predicted_beat_time + kth_tempo;
 			end
 		end
 		% trim beat times array to remove zeros?
-		beat_times = beat_times(1:beat_index);
+		beat_times = beat_times(1:num_beats_predicted);
 	end
 
 	function output_beat_times(this, data_directory)
@@ -387,9 +389,7 @@ methods (Static)
 		% enhancement -> pass in the values for each tempo, from the tempo phase
 		% estimator.
 
-		% currently autocorrelation.m returns a vector of half the input length.
-		acf_length = frame_length/2;
-		acf_data = zeros(acf_length, num_features);
+		acf_data = zeros(frame_length, num_features);
 
 		for n = 1:num_features
 			acf_data(:, n) = autocorrelation(observations(:, n));

@@ -5,7 +5,6 @@
 % Author: Max Fisher
 
 function r2b2(audio_filename, audio_directory, data_output_directory)
-
 	plot_data = 0;
 	output_audio = 1;
 
@@ -21,6 +20,37 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	audio_file_path = strcat(audio_directory, '/', audio_filename);
 	[audio_data, audio_sample_rate] = audioread(audio_file_path);
 
+	% 
+	% ALGORITHM PARAMETERS
+	% 
+
+	% (the following three values are commonly used in speech processing)
+	audio_win_time = 20/1000; %seconds,
+	audio_win_overlap_proportion = 0.5;
+	audio_win_type = @hann;
+
+	min_bpm = 35;
+	max_bpm = 210;
+
+	max_tempo_peaks = 8;
+	max_phase_peaks = 4;
+
+	feature_win_time = 3; %seconds
+	feature_win_overlap_proportion = 0.75;
+	% or maybe use a window that weights recent samples more than older (by a
+	% few seconds) samples
+	feature_win_type = 'rect';
+
+	feature_upsample_factor = 2;
+
+	params = processing_params(audio_sample_rate, audio_win_time, ...
+		audio_win_overlap_proportion, audio_win_type, feature_win_time, ...
+		feature_win_overlap_proportion, feature_win_type, feature_upsample_factor, ...
+		min_bpm, max_bpm, max_tempo_peaks, max_phase_peaks);
+
+	disp('algorithm parameters');
+	disp(params);
+
 	%
 	% FEATURE CALCULATION
 	%
@@ -31,7 +61,6 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 
 	feature1.compute_feature;
 
-	params = processing_params;
 	num_features = feature1.num_feature_channels;
 
 	tp_estimator = tpe_autocorrelation;
@@ -67,17 +96,17 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 		for timestamp = beat_times
 			fprintf(outfile, '%.3f\n', timestamp);
 		end
-		
+
 		tp_estimator.output_tempo_phase_data(data_output_directory);
-		
+
 	else
 		disp('Beat times');
 		disp(beat_times);
 		disp('Winning states');
 		for i = 1:length(viterbi.winning_states)
 			if isa(viterbi.winning_states{i}, 'model_state')
-				fprintf('frame idx: %d, bpm: %.1f, observed time: %.2f, prob: %4g\n', ...
-					viterbi.winning_states{i}.frame_idx, ...
+				fprintf('frame %d: bpm = %.1f, observed time = %.2f, prob = %4g\n', ...
+					viterbi.winning_states{i}.frame_number, ...
 					viterbi.winning_states{i}.tempo_bpm, ...
 					viterbi.winning_states{i}.beat_location, ...
 					viterbi.winning_probabilities(i));

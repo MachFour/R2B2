@@ -37,11 +37,25 @@ methods
 		for k = 1:this.num_feature_frames
 			tempo_list = this.params.tempo_lag_range';
 			% this is a matrix, containing the frames for each feature
-			curr_feature_frame_matrix = this.get_feature_frame(k);
+			curr_feature_frame = this.get_feature_frame(k);
+			% used for the autocorrelation 
+			prev_nonoverlapping_samples = this.get_prev_nonoverlapping_frame(k);
 
 			for n = 1:this.num_features
-				curr_feature_frame = curr_feature_frame_matrix(:, n);
-				acf = autocorrelation(curr_feature_frame);
+				feature_frame_n = curr_feature_frame(:, n);
+
+				% if we have previous data, we can use it to improve the
+				% autocorrelation estimates. This isn't a strict autocorrelation
+				% any more, but we assume that the previous samples together
+				% with the current frame have a constant tempo.
+				if ~isempty(prev_nonoverlapping_samples)
+					previous_data = prev_nonoverlapping_samples(:, n);
+					acf = autocorrelation(feature_frame_n, previous_data);
+				else
+					% in the beginning when we don't have a previous frame, just
+					% use an unbiased autocorrelation
+					acf = autocorrelation(feature_frame_n);
+				end
 
 				% now pick peaks!
 				% make sure to correct for 1-indexing in arrays
@@ -59,9 +73,25 @@ methods
 				% don't sort in descending order: find faster tempos first
 				% limit range of allowed tempos to have a minimum of 40BPM
 
+				% heuristic: use peaks at half the given tempo to support the
+				% given tempo. Do this by averaging the acf with a compressed
+				% version
+				doubled_acf = acf;
+
+				for i = 1:length(acf)/2;
+					doubled_acf(i) = acf(i)/2 + (acf(2*i - 1) + acf(2*i))/4;
+				end
+
+				% could be useful for compound time music?
+				%tripled_acf = acf;
+
+				%for i = 1:length(acf)/3;
+				%	tripled_acf(i) = acf(i)/2 + ...
+				%		(acf(3*i-2) + acf(3*i-1) + acf(3*i))/6;
+				%end
 
 				[tempo_confidences, tempo_peaks]  = ...
-					findpeaks(acf(1+tempo_list), ...
+					findpeaks(doubled_acf(1+tempo_list), ...
 						tempo_list, ...
 						'MinPeakDistance', this.params.min_lag_samples/2, ...
 						'MinPeakProminence', 0.025, ...
@@ -91,7 +121,7 @@ methods
 				% if there were no significant peaks in the autocorrelation, just skip
 				% calculating phase alignments
 				if isempty(curr_tempo_estimates)
-					this.tempo_phase_estimates{k, n} = [];
+					this.tp_estimates{k, n} = [];
 					continue
 				end
 
