@@ -182,7 +182,7 @@ methods
 			'MinPeakDistance', tempo_estimate/8, ...
 			'NPeaks', this.params.max_alignment_peaks, ...
 			'SortStr', 'descend');
-		
+
 		% we make sign of the beat alignment negative, to reflect that the offsets
 	 	% are calculated backwards from the end of the current feature frame
 		alignments = -1*alignments;
