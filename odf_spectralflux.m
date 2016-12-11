@@ -2,7 +2,7 @@ classdef odf_spectralflux < feature_extractor
    properties
       num_feature_channels = 1;
       feature_upsample_factor = 2;
-      
+      num_feature_dimensions = 1;
       frame_spectral_flux;
       lp_cutoff_freq = 10; %Hz
       lp_order = 6;
@@ -21,7 +21,7 @@ classdef odf_spectralflux < feature_extractor
             initialise@feature_extractor(this, audio_data, audio_sample_rate, name);
         
             this.frame_spectral_flux = ...
-            zeros(this.feature_upsample_factor*this.num_audio_frames,1);
+            zeros(this.feature_upsample_factor*this.num_audio_frames,this.num_feature_dimensions);
         
             LP_cutoff_freq_normalised = this.lp_cutoff_freq/(this.feature_sample_rate/2);
 
@@ -32,9 +32,9 @@ classdef odf_spectralflux < feature_extractor
        function compute_feature(this)
            % Store delays between each iteration
            % Used for LP filter when interpolating
-           filter_delays = zeros(this.lp_order, 1);
+           filter_delays = zeros(this.lp_order, this.num_feature_dimensions);
            % prev_x_fft_mag stores magnitude of once delayed delayed fft
-           prev_x_fft_mag = zeros(this.audio_win_length/2,1);
+           prev_x_fft_mag = zeros(this.audio_win_length/2,this.num_feature_dimensions);
            for n = 1:this.num_audio_frames
                 % Fetch current frame
                 curr_frame = this.get_windowed_audio_frame(n);
@@ -52,7 +52,7 @@ classdef odf_spectralflux < feature_extractor
                 % Pushing zeros in for interpolation
                 upsampled_spec_diff = [
                   spec_diff
-                  zeros(this.feature_upsample_factor-1,1)
+                  zeros(this.feature_upsample_factor-1,this.num_feature_dimensions)
                 ];
         
                 % Filter
@@ -78,7 +78,7 @@ classdef odf_spectralflux < feature_extractor
                     difference = this.frame_spectral_flux(frame, :) ...
                         - this.frame_spectral_flux(frame-1, :);
                 end
-                diff(frame) = difference;   
+                diff(frame,1) = difference;   
             end
         
             figure;
@@ -87,7 +87,7 @@ classdef odf_spectralflux < feature_extractor
             title(sprintf('spectral flux, frame %d', frame));
 
             subplot(2, 1, 2);
-            plot(xcorr(this.frame_spectral_flux(sample_frames,1)));
+            plot(autocorrelation(this.frame_spectral_flux(sample_frames,1)));
             title(sprintf('Difference, frame %d->%d', frame-1, frame));        
         end
        

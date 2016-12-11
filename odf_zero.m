@@ -3,7 +3,9 @@ classdef odf_zero < feature_extractor
 properties
       
     num_feature_channels = 1;
-
+    
+    num_feature_dimensions = 1;
+    
     feature_upsample_factor = 2;
 
     frame_zero_crossing_rate;
@@ -27,7 +29,7 @@ methods
         initialise@feature_extractor(this, audio_data, audio_sample_rate, name);
 
         this.frame_zero_crossing_rate = ...
-            zeros(this.feature_upsample_factor*this.num_audio_frames,1);
+            zeros(this.feature_upsample_factor*this.num_audio_frames,this.num_feature_dimensions);
        
         LP_cutoff_freq_normalised = this.lp_cutoff_freq/(this.feature_sample_rate/2);
 
@@ -39,7 +41,7 @@ methods
     function compute_feature(this)
         % Store delays between each iteration
         % Used for LP filter when interpolating
-        filter_delays = zeros(this.lp_order, 1);
+        filter_delays = zeros(this.lp_order, this.num_feature_dimensions);
 
         for n = 1:this.num_audio_frames
             %Initialise zero crossing rate
@@ -58,7 +60,7 @@ methods
             % Pushing zeros in for interpolation
             upsampled_zero_crossing = [
               zero_crossing_rate
-              zeros(this.feature_upsample_factor-1,1)
+              zeros(this.feature_upsample_factor-1,this.num_feature_dimensions)
             ];
             % Filter
             [interpolated_zero_crossing, filter_delays] = ...
@@ -86,7 +88,7 @@ methods
             HWR_difference = difference;
             HWR_difference(HWR_difference < 0) = 0;
             
-            diff(frame) = HWR_difference;
+            diff(frame,1) = HWR_difference;
             
            
         end
@@ -96,7 +98,7 @@ methods
         title(sprintf('zero crossing rate, frame %d', frame));
 
         subplot(2, 1, 2);
-        plot(xcorr(this.frame_zero_crossing_rate(sample_frames,1)));
+        plot(autocorrelation(this.frame_zero_crossing_rate(sample_frames,1)));
         title(sprintf('Difference, frame %d->%d', frame-1, frame));        
     end % plot_sample_intermediate_data
 end

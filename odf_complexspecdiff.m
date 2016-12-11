@@ -4,6 +4,8 @@ classdef odf_complexspecdiff < feature_extractor
       num_feature_channels = 1;
       % No upsampling performed
       feature_upsample_factor = 2;
+      
+      num_feature_dimensions = 1;
       % Stores complex spectral diff of each audio frame
       frame_complex_spectral_diff;
       lp_cutoff_freq = 10; %Hz
@@ -23,7 +25,7 @@ classdef odf_complexspecdiff < feature_extractor
             initialise@feature_extractor(this, audio_data, audio_sample_rate, name);
             
             this.frame_complex_spectral_diff = ...
-            zeros(this.feature_upsample_factor*this.num_audio_frames,1);
+            zeros(this.feature_upsample_factor*this.num_audio_frames,this.num_feature_dimensions);
         
             LP_cutoff_freq_normalised = this.lp_cutoff_freq/(this.feature_sample_rate/2);
 
@@ -36,11 +38,11 @@ classdef odf_complexspecdiff < feature_extractor
        function compute_feature(this)
            % Store delays between each iteration
            % Used for LP filter when interpolating
-           filter_delays = zeros(this.lp_order, 1);
+           filter_delays = zeros(this.lp_order, this.num_feature_dimensions);
            % prev_x_fft stores one delayed frame fft 
-           prev_x_fft = zeros(this.audio_win_length/2,1);
+           prev_x_fft = zeros(this.audio_win_length/2,this.num_feature_dimensions);
            % prev_prev_x_fft stores two delayed frame fft
-           prev_prev_x_fft = zeros(this.audio_win_length/2,1);
+           prev_prev_x_fft = zeros(this.audio_win_length/2,this.num_feature_dimensions);
            
            for n = 1:this.num_audio_frames
                 % Get audio frame
@@ -62,7 +64,7 @@ classdef odf_complexspecdiff < feature_extractor
                 % Pushing zeros in for interpolation
                 upsampled_csd = [
                     csd
-                    zeros(this.feature_upsample_factor-1,1)
+                    zeros(this.feature_upsample_factor-1,this.num_feature_dimensions)
                 ];
                 % Filter
                 [interpolated_csd, filter_delays] = ...
@@ -87,7 +89,7 @@ classdef odf_complexspecdiff < feature_extractor
                     difference = this.frame_complex_spectral_diff(frame, :) ...
                         - this.frame_complex_spectral_diff(frame-1, :);
                 end
-                diff(frame) = difference;   
+                diff(frame,1) = difference;   
             end
         
             figure;
@@ -96,7 +98,7 @@ classdef odf_complexspecdiff < feature_extractor
             title(sprintf('complex diff, frame %d', frame));
 
             subplot(2, 1, 2);
-            plot(xcorr(this.frame_complex_spectral_diff(sample_frames,1)));
+            plot(autocorrelation(this.frame_complex_spectral_diff(sample_frames,1)));
             title(sprintf('Difference, frame %d->%d', frame-1, frame));        
         end
    end
