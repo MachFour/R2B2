@@ -39,10 +39,10 @@ properties
 	min_lag_samples;
 
 	% how many peaks to pick in tpe_autocorrelation and friends
-	% the maximum total number of tempo/phase estimates for each feature
+	% the maximum total number of tempo/beat alignment estimates for each feature
 	% frame is given by MAX_TEMPO_PEAKS*MAX_PHASE_PEAKS
 	max_tempo_peaks;
-	max_phase_peaks;
+	max_alignment_peaks;
 
 
 
@@ -72,7 +72,7 @@ properties
 	% corresponding time of feature window
 	feature_win_time;
 
-	% How often tempo and phase is (re)estimated on a new frame of features.
+	% How often tempo and beat alignment is (re)estimated on a new frame of features.
 	% Given a fixed feature_sample_rate, this is proportional to feature_hop_size
 	time_between_estimates;
 
@@ -117,7 +117,7 @@ methods
 			audio_win_time, audio_win_overlap_proportion, audio_win_type, ...
 			feature_win_time, feature_win_overlap_proportion, feature_win_type, ...
 			feature_upsample_factor, ...
-			min_bpm, max_bpm, max_tempo_peaks, max_phase_peaks ...
+			min_bpm, max_bpm, max_tempo_peaks, max_alignment_peaks ...
 		)
 
 		% default values
@@ -133,7 +133,7 @@ methods
 			max_bpm = 320;
 
 			max_tempo_peaks = 8;
-			max_phase_peaks = 4;
+			max_alignment_peaks = 4;
 
 			feature_win_time = 3; %seconds
 			feature_win_overlap_proportion = 0.75;
@@ -170,7 +170,7 @@ methods
 		params.feature_win_type = feature_win_type;
 
 		params.max_tempo_peaks = max_tempo_peaks;
-		params.max_phase_peaks = max_phase_peaks;
+		params.max_alignment_peaks = max_alignment_peaks;
 
 
 		% precompute dependent features

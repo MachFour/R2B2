@@ -20,9 +20,9 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	audio_file_path = strcat(audio_directory, '/', audio_filename);
 	[audio_data, audio_sample_rate] = audioread(audio_file_path);
 
-	% 
+	%
 	% ALGORITHM PARAMETERS
-	% 
+	%
 
 	% (the following three values are commonly used in speech processing)
 	audio_win_time = 20/1000; %seconds,
@@ -30,10 +30,10 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	audio_win_type = @hann;
 
 	min_bpm = 35;
-	max_bpm = 210;
+	max_bpm = 240;
 
 	max_tempo_peaks = 8;
-	max_phase_peaks = 4;
+	max_alignment_peaks = 4;
 
 	feature_win_time = 3; %seconds
 	feature_win_overlap_proportion = 0.75;
@@ -46,7 +46,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	params = processing_params(audio_sample_rate, audio_win_time, ...
 		audio_win_overlap_proportion, audio_win_type, feature_win_time, ...
 		feature_win_overlap_proportion, feature_win_type, feature_upsample_factor, ...
-		min_bpm, max_bpm, max_tempo_peaks, max_phase_peaks);
+		min_bpm, max_bpm, max_tempo_peaks, max_alignment_peaks);
 
 	disp('algorithm parameters');
 	disp(params);
@@ -58,29 +58,27 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	feature1 = odf_klapuri;
 	feature1.initialise(audio_data, audio_sample_rate, ...
 		'klapuris_feature');
-
 	feature1.compute_feature;
 
 	num_features = feature1.num_feature_channels;
 
-	tp_estimator = tpe_autocorrelation;
-	tp_estimator.initialise(params, feature1.feature_matrix, 'tpe-acf-multi');
-	tp_estimator.compute_tempo_phase_estimates;
+	%
+	% VITERBI ALGORITHM
+	%
 
+	ta_estimator = tae_autocorrelation(params, feature1.feature_matrix, 'tae-acf');
+	viterbi = bp_viterbi(params, 'Viterwheats', num_features);
 
-	% Viterbi algorithm
+	viterbi.initialise
 
-
-	viterbi = bp_viterbi;
-	viterbi.initialise(params, 'Viterwheats', num_features);
-
-	num_feature_frames = tp_estimator.num_feature_frames;
 	% iterate over each frame, giving the viterbi algorithm its observations
+	num_feature_frames = ta_estimator.num_feature_frames;
+
 	for k = 1:num_feature_frames
 		% get all features' estimates at once
-		kth_frame_tp_estimates = tp_estimator.tp_estimates(k, :);
-		kth_feature_frame_matrix = tp_estimator.get_feature_frame(k);
-		viterbi.step_frame(kth_feature_frame_matrix, kth_frame_tp_estimates);
+		kth_feature_frame_matrix = ta_estimator.get_feature_frame(k);
+		kth_frame_ta_estimates = ta_estimator.pick_tempo_and_alignment_estimates(k);
+		viterbi.step_frame(kth_feature_frame_matrix, kth_frame_ta_estimates);
 	end
 
 	beat_times = viterbi.compute_beat_times;
@@ -97,7 +95,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 			fprintf(outfile, '%.3f\n', timestamp);
 		end
 
-		tp_estimator.output_tempo_phase_data(data_output_directory);
+		ta_estimator.output_tempo_alignment_data(data_output_directory);
 
 	else
 		disp('Beat times');
@@ -137,20 +135,20 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 		for k = sample_frames
 			figure; hold on;
 			for n = 1:num_features
-				estimates_n = tp_estimator.tp_estimates{k, n};
+				estimates_n = ta_estimator.tempo_alignment_estimates{k, n};
 				%plot in seconds
 				if isempty(estimates_n)
 					warning('No estimates for feature %d in frame %d', n, k);
 				else
 					feature_fs = params.feature_sample_rate;
 					tempos = estimates_n(:, 1);
-					phases = estimates_n(:, 3);
+					alignments = estimates_n(:, 3);
 					confidences = estimates_n(:, 4);
-					stem3(tempos/feature_fs, phases/feature_fs, confidences, 'filled');
+					stem3(tempos/feature_fs, alignments/feature_fs, confidences, 'filled');
 				end
 
 			end
-			title(sprintf('Scatterplot of tempo/phase estimates at %.2f s', ...
+			title(sprintf('Scatterplot of tempo/beat alignment estimates at %.2f s', ...
 				params.frame_end_time(k)));
 			xlabel('Tempo period (seconds)');
 			ylabel('Offset from frame end (seconds)');

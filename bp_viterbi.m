@@ -37,14 +37,23 @@ properties
 end
 
 methods
-	function initialise(this, params, name, num_features)
-		this.params = params;
-		this.name = name;
-		this.num_features = num_features;
+	function viterbi = bp_viterbi(params, name, num_features)
+		if nargin == 0
+			warning('bp_viterbi initialised with default values');
+			params = {};
+			name = 'bp_viterbi';
+			num_features = 0;
+		end
+		viterbi.params = params;
+		viterbi.name = name;
+		viterbi.num_features = num_features;
 
-		this.frame_number = 0;
+		viterbi.frame_number = 0;
 
+	end
 
+	% compute initial states and probabilities, given no tempos
+	function initialise(this)
 		% restrict to 50-180 BPM initially - low bpm makes it really
 		% inefficient!!! (there are a huge number of states)
 		min_initial_bpm = 45;
@@ -83,16 +92,16 @@ methods
 	%	is a 1xn cell matrix containing the raw features, or observations.
 	%	There is a column in the cell matrix for each feature, and each cell is a
 	%	(single dimensional) vector of length equal to the feature frame length.
-	% tempo_phase_estimates = cell(1, this.num_features)
-	%	is a cell matrix containing a set of tempo and phase estimates (no
+	% tempo_alignment_estimates = cell(1, this.num_features)
+	%	is a cell matrix containing a set of tempo and alignment estimates (no
 	% 	confidences) for the current frame. There is one set for each feature,
 	%	which means the cell matrix is 1 row (since it's only one frame's worth of
-	%	data) by n columns, where n is the number of features. The tempo and phase
+	%	data) by n columns, where n is the number of features. The tempo and alignment
 	%	estimates should be in SAMPLES. These estimates will be used to generate the
 	%	states that are searched for this frame
 
 
-	function step_frame(this, feature_data, tempo_phase_estimates)
+	function step_frame(this, feature_data, tempo_alignment_estimates)
 		this.frame_number = this.frame_number + 1;
 
 		% [OLD NOTES ON CLUSTERING]
@@ -103,13 +112,13 @@ methods
 		% containing the tempo that is finally picked as the most likely
 		% one for this frame, and score those features higher.
 
-		% for now, just use all the tempo/phase estimates given as states,
+		% for now, just use all the tempo/alignment estimates given as states,
 		% even if they're close together.
 
-		% find which states to search over, using the tempo/phase estimates.
+		% find which states to search over, using the tempo/alignment estimates.
 
 		max_tp_estimates_per_feature = ...
-			this.params.max_tempo_peaks * this.params.max_phase_peaks;
+			this.params.max_tempo_peaks * this.params.max_alignment_peaks;
 
 		% initialise states cell array
 
@@ -124,7 +133,7 @@ methods
 
 		% add all of the estimates
 		for n = 1:this.num_features
-			feature_n_estimates = tempo_phase_estimates{n};
+			feature_n_estimates = tempo_alignment_estimates{n};
 			for estimate_idx = 1:size(feature_n_estimates, 1)
 				curr_tp_estimate = feature_n_estimates(estimate_idx, :);
 				tempo_estimate = curr_tp_estimate(1);
@@ -189,7 +198,7 @@ methods
 		num_beats_predicted = 0;
 
 		for k = 1:num_predictions
-			% output beat predictions using the kth winning tempo/phase
+			% output beat predictions using the kth winning tempo/alignment
 			% estimate, up to the estimate time of the next frame
 			estimate_time = this.params.estimate_time(k);
 			% note the estimates for the final frame may extend slightly over the
@@ -308,7 +317,7 @@ methods (Static)
 	% new_states = cell(num_new_states, 1)
 	% 	is a list of the new states to calculate the probabilities for, which is a
 	% 	subset of all possible states that is heuristically determined by the
-	% 	tempo_phase_estimator. Note that the new states don't have to be a subset of
+	% 	tempo_alignment_estimator. Note that the new states don't have to be a subset of
 	% 	the old states.
 	% observations = matrix(feature_frame_length, num_features);
 	% 	is the matrix of feature data from each feature, for the current
@@ -386,7 +395,7 @@ methods (Static)
 		num_states = size(states, 1);
 
 		% first, calculate the autocorrelation function for each feature.
-		% enhancement -> pass in the values for each tempo, from the tempo phase
+		% enhancement -> pass in the values for each tempo, from the tempo_alignment
 		% estimator.
 
 		acf_data = zeros(frame_length, num_features);
@@ -424,9 +433,9 @@ methods (Static)
 		baf_data = zeros(longest_tempo_period, num_tempos, num_features);
 
 		% calculate beat alignment data.
-		% Yes I know this is clumsy. If I
-		% implement clustering of tempo and phase in tpe_acf_clustering then
-		% this won't be needed any more, since we can just pass in the value.
+		% Yes I know this is clumsy. If I implement clustering of tempo and beat 
+		% alignment estimates, then this might not be needed any more, since we can
+		% just pass in the value.
 		all_tempos = idx_for_tempo.keys;
 		for i = 1:num_tempos
 			ith_tempo = all_tempos{i};
@@ -468,8 +477,8 @@ methods (Static)
 % 					acf_at_half_tempo = 1;
 % 				end
 
-				baf_at_tempo_alignment = baf_data(beat_align_idx, baf_tempo_idx, n);
-				observation_prob_for_feature = acf_at_tempo*baf_at_tempo_alignment;
+				baf_at_tempo_and_alignment = baf_data(beat_align_idx, baf_tempo_idx, n);
+				observation_prob_for_feature = acf_at_tempo*baf_at_tempo_and_alignment;
 				% times feature_weight(n)?
 
 				observation_prob = observation_prob + observation_prob_for_feature;

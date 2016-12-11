@@ -33,8 +33,8 @@ feature_extractor -
 for something that takes audio and spits out feature data, which may consist of
 one or several dimensions of data over time
 
-tempo_phase_estimator - for something that takes in (single dimensional)
-feature data and creates several tempo and phase estimates at regular intervals
+tempo_alignment_estimator - for something that takes in (single dimensional)
+feature data and creates several tempo and beat alignment estimates at regular intervals
 
 Concrete classes:
 
@@ -44,14 +44,14 @@ Implements Klapuri's onset detection function
 odf_mfcc -
 Computes a feature made of differenced MFCCs
 
-tpe_autocorrelation -
+tae_autocorrelation -
 Performs autocorrelation-based tempo detection, then for each tempo estimate
-in a frame of features, finds phase by sliding set of equally spaced impulses
+in a frame of features, finds beat alignment by sliding set of equally spaced impulses
 along the feature frame, and choosing the amount of shift that maximises their
 dot product
 
 bp_viterbi - Uses the Viterbi algorithm to model probabilities of things, which can then
-be used to takes in tempo and phase estimates over time, aggregate them,
+be used to takes in tempo and beat alignment estimates over time, aggregate them,
 and predict most likely future beat times
 
 
@@ -59,4 +59,4 @@ Helper functions:
 
 autocorrelation.m - Calculates autocorrelation in an improved way
 mel_filter.m - for klapuri's feature, and also MFCC calculation
-beat_alignment_function.m - for phase calculation
+beat_alignment_function.m - for beat alignment calculation

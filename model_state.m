@@ -1,4 +1,4 @@
-% class used to contain the state of a frame (in terms of tempo, phase, etc.)
+% class used to contain the state of a frame (in terms of tempo, beat alignment, etc.)
 % for use with the bp_viterbi class
 % see musical_model.m for a description of the following model
 

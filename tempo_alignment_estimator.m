@@ -8,11 +8,11 @@
 
 % Author: Max Fisher
 
-classdef (Abstract) tempo_phase_estimator < handle
+classdef (Abstract) tempo_alignment_estimator < handle
 
 properties
-	% name of this estimator, to use when writing out data files
-	estimator_name;
+	% to use when writing out data files
+	name;
 
 	% processing parameters object
 	params;
@@ -25,21 +25,21 @@ properties
 	num_features;
 
 	% output tempo and beat alignment estimates to a file with the following suffix
-	data_output_suffix = '-tp-estimates.txt';
+	data_output_suffix = '-ta-estimates.txt';
 
-	% tempo and beat phase estimates for each feature frame analysed
+	% tempo and beat estimates estimates for each feature frame analysed
 	% these are cell arrays: the n'th index of each contains a list of tuples
 	% of the form
-	% (tempo, tempo confidence, beat location, beat location confidence)
-	% i.e. a set of estimates of possible tempo and beat phases produced by
+	% (tempo, tempo confidence, beat alignment, beat alignment confidence)
+	% i.e. a set of estimates of possible tempos and beat alignments produced by
 	% the n'th frame of the input feature. (which corresponds to a section of
 	% audio that is feature_win_time seconds long, and is updated at a frequency
 	% of estimate_update_rate Hz.
 
-	% the first and third values are in samples, and must be multiplied by the feature
+	% the first and third values are in samples, and must be divided by the feature
 	% rate in order to get a value in seconds.
 	% the second and fourth values are unitless real numbers
-	tp_estimates;
+	tempo_alignment_estimates;
 end
 
 properties (Dependent)
@@ -58,15 +58,23 @@ methods
 
 	end
 
-	function initialise(this, params, feature_matrix, estimator_name)
-		this.params = params;
-		this.estimator_name = estimator_name;
-		this.feature_matrix = feature_matrix;
+	function estimator = tempo_alignment_estimator(params, feature_matrix, name)
+		if nargin == 0
+			warning('estimator initialised with default values');
+			params = {};
+			feature_matrix = [];
+			name = 'tempo_alignment_estimator';
+		end
 
-		this.num_feature_samples = size(this.feature_matrix, 1);
-		this.num_features = size(this.feature_matrix, 2);
+		estimator.params = params;
+		estimator.name = name;
+		estimator.feature_matrix = feature_matrix;
 
-		this.tp_estimates = cell(this.num_feature_frames, this.num_features);
+		estimator.num_feature_samples = size(estimator.feature_matrix, 1);
+		estimator.num_features = size(estimator.feature_matrix, 2);
+
+		estimator.tempo_alignment_estimates = ...
+			cell(estimator.num_feature_frames, estimator.num_features);
 	end
 
 	% returns the index of the first sample in the kth feature frame, to index into
@@ -96,17 +104,19 @@ methods
 	% this.get_feature_frame(k) begins. This is useful for doing the
 	% autocorrelation, which need to slide back over previous data.
 	% For early frames, there won't be enough samples to get a previous
-	% nonoverlapping frame. In this case, autocorrelation has to be done without
-	% previous data. An empty matrix will be returned.
+	% nonoverlapping frame. In this case, the unavailable samples will become zeros
 	function f = get_prev_nonoverlapping_frame(this, k)
 		feature_win_length = this.params.feature_win_length;
-		current_frame_start_idx = this.frame_first_sample_row(k);
 
-		prev_frame_start_idx = current_frame_start_idx - 1 - feature_win_length;
+		prev_frame_end_idx = this.frame_first_sample_row(k) - 1;
+		prev_frame_start_idx = prev_frame_end_idx - feature_win_length;
 
 		if prev_frame_start_idx <= 0
-			% not enough previous samples
-			f = [];
+			% not enough previous samples; start with zeros and fill the rows that
+			% can be filled
+			num_zero_rows = feature_win_length - prev_frame_end_idx;
+			f = zeros(feature_win_length, this.num_features);
+			f((num_zero_rows + 1):end, :) = this.feature_matrix(1:prev_frame_end_idx, :);
 		else
 			prev_frame_rows = prev_frame_start_idx + (1:feature_win_length);
 			f = this.feature_matrix(prev_frame_rows, :);
@@ -115,10 +125,10 @@ methods
 
 
 	% exports the computed data to files, one for each features
-	function output_tempo_phase_data(this, data_directory)
+	function output_estimate_data(this, data_directory)
 		outfile = cell(this.num_features, 1);
 		for n = 1:this.num_features;
-			filename = strcat(data_directory, '/', this.estimator_name, ...
+			filename = strcat(data_directory, '/', this.name, ...
 				sprintf('-feature%d', n), this.data_output_suffix);
 			outfile{n} = fopen(filename, 'w+');
 		end
@@ -128,8 +138,8 @@ methods
 			'time=%f\t', ...
 			'tempo=%f\t', ...
 			'tempo_confidence=%f\t', ...
-			'phase=%f\t', ...
-			'phase_confidence=%f\n' ...
+			'alignment=%f\t', ...
+			'alignment_confidence=%f\n' ...
 		);
 
 		feature_sample_rate = this.params.feature_sample_rate;
@@ -141,23 +151,23 @@ methods
 			frame_end_time = this.params.feature_frame_end_time(k);
 
 			for n = 1:this.num_features
-				curr_tp_estimates = this.tp_estimates{k, n};
+				feature_n_estimates = this.tempo_alignment_estimates{k, n};
 
-				for estimate_index = 1:size(curr_tp_estimates, 1)
+				for estimate_index = 1:size(feature_n_estimates, 1)
 					% tempo and alignment are expresseed in samples,
 					% convert to time by dividing by feature rate
-					est_tempo = curr_tp_estimates(estimate_index, 1)/feature_sample_rate;
-					est_tempo_confidence = curr_tp_estimates(estimate_index, 2);
-					est_phase = curr_tp_estimates(estimate_index, 3)/feature_sample_rate;
-					est_phase_confidence = curr_tp_estimates(estimate_index, 4);
+					tempo = feature_n_estimates(estimate_index, 1)/feature_sample_rate;
+					tempo_confidence = feature_n_estimates(estimate_index, 2);
+					alignment = feature_n_estimates(estimate_index, 3)/feature_sample_rate;
+					alignment_confidence = feature_n_estimates(estimate_index, 4);
 
 					fprintf(outfile{n}, output_format_string, ...
 						k, ...
 						frame_end_time, ...
-						est_tempo, ...
-						est_tempo_confidence, ...
-						est_phase, ...
-						est_phase_confidence ...
+						tempo, ...
+						tempo_confidence, ...
+						alignment, ...
+						alignment_confidence ...
 					);
 				end
 			end
@@ -167,13 +177,14 @@ methods
 end % methods
 
 methods (Abstract)
-	% populate the tempo_phase_estimate cell array with estimates from the
-	% supplied feature
-	compute_tempo_phase_estimates(this, frame_idx)
+	% produce a set of tempo and beat alignment estimates from each feature, for the
+	% given frame number. Also save internally in the tempo_alignment_estimates cell
+	% array.
+	pick_tempo_and_alignment_estimates(this, frame_number)
 
-	% plots relevant intermediate processing data for the given sample frames
+	% plots relevant intermediate processing data for the given sample frame
 	% e.g. the graph which is peak picked to choose a tempo estimate.
-	plot_sample_intermediate_data(this, sample_frames, feature_idx)
+	plot_frame_data(this, frame_number, feature_number)
 
 end % methods (Abstract)
 

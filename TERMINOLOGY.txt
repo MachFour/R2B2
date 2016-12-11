@@ -1,0 +1,36 @@
+
+audio frame:
+* a set of audio_win_length samples of raw audio data.
+* This is usually a single dimensional vector.
+* The sampling rate of this data is audio_sample_rate.
+* A windowing function whose handle is stored in audio_win_type is applied to the raw audio stream to create the frames.
+
+feature frame:
+* a set of feature_win_length samples of feature data.
+* When multiple features are considered at the same time, this is a matrix with feature_win_length rows, and one column for each features
+* each column of feature samples has the same sample rate: feature_sample rate
+* No window function is applied to the frame (i.e. a rectangular window)
+
+tempo:
+* describes the spacing between beat times
+* In most processing, it is stored and manipulated as a period of beat repetitions, i.e. time between beats
+* It usually has units of samples, unless specified otherwise (see below)
+
+tempo_period:
+* the spacing between beats, explicitly in seconds
+
+tempo_bpm:
+* tempo measured in BPM, which is defined as 60/tempo_period.
+
+beat location:
+* an absolute point in time (measured in seconds), where a beat is hypothesised to have occurred.
+* beat locations are always events that occur within the frame that estimates them. That is, they are past events. In order to predict a future beat time, multiples of tempo_period are added to the beat location.
+
+beat alignment:
+* This is a measurement of time (in samples) between the beat location of a particular frame, and the end time of that frame.
+* beat location and beat alignment are related as follows:
+	For the frame that estimates a beat alignment, the corresponding beat location is
+	beat_location = frame_end_time + beat_alignment/feature_sample_rate.
+* most processing is done using beat alignment rather than beat location
+* In older code, this is what is meant by 'phase'
+
