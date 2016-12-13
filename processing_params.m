@@ -97,8 +97,11 @@ methods
 	% audio_win_type
 	% 	is which type of window function to use for audio windowing
 	% min_bpm, max_bpm
-	% 	are self explanatory. Actual values are rounded to nearest sample
-	% 	equivalents.
+	% 	These are the maximum allowable tempo ranges that will be used in processing.
+	%	No estimates will be considered that lie outside this range.
+	%	Values given here are rounded so as to correspond to an integer number of
+	%	tempo lag samples. Note that the minimum estimate BPM is constrained by the
+	%	length of the feature window, due to the use of the autocorrelation.
 	% feature_win_time
 	% 	is the approximate length of audio to use for tempo estimation at each time
 	% 	point (in seconds). The actual length of feature frames will be the closest
@@ -129,7 +132,7 @@ methods
 			audio_win_overlap_proportion = 0.5;
 			audio_win_type = @hann;
 
-			min_bpm = 35;
+			min_bpm = 20;
 			max_bpm = 320;
 
 			max_tempo_peaks = 8;
@@ -211,7 +214,11 @@ methods
 
 		this.max_bpm = 60/this.min_lag;
 
-		this.tempo_lag_range = (this.min_lag_samples:this.max_lag_samples);
+		% have to limit lowest tempo bpm/highest lag range to length of
+		% autocorrelation function -> feature frame length/2
+		acf_length = this.feature_win_length/2;
+		this.tempo_lag_range = ...
+			this.min_lag_samples:min(this.max_lag_samples, acf_length - 1);
 
 		this.feature_win_time = this.feature_win_length/this.feature_sample_rate;
 

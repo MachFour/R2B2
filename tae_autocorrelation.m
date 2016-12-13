@@ -32,11 +32,15 @@ methods
 		% The last sample of past_frame immediately preceeds the first sample of
 		% feature_frame. This is used to improve the quality of the autocorrelation.
 		feature_frame = this.get_feature_frame(frame_number);
-		past_frame = this.get_prev_nonoverlapping_frame(frame_number);
+		%past_frame = this.get_prev_nonoverlapping_frame(frame_number);
+		%
+		%if ~isequal(size(feature_frame), size(past_frame))
+		%	error('feature_frame and past_frame must have the same size');
+		%end
 
-		if ~isequal(size(feature_frame), size(past_frame))
-			error('feature_frame and past_frame must have the same size');
-		end
+		% An equivalent operation is just to take a longer feature frame size
+		% and split it in half.
+
 
 		num_features = size(feature_frame, 2);
 
@@ -57,8 +61,8 @@ methods
 			feature_n_estimate_tuples = zeros(max_estimates_per_feature, 4);
 			estimate_number = 0;
 
-			[tempo_estimates, tempo_confidences] = this.pick_likely_tempos(...
-				feature_frame(:, n), past_frame(:, n));
+			[tempo_estimates, tempo_confidences] = ...
+				this.pick_likely_tempos(feature_frame(:, n));
 
 			for tempo_idx = 1:length(tempo_estimates)
 				[align_estimates, align_confidences] = this.pick_likely_beat_alignments(...
@@ -86,16 +90,15 @@ methods
 	end
 
 	% Given a feature frame for a single feature, determine which are the most likely
-	% tempos in that frame, using an autocorrelation of the current feature frame and
-	% a sequence of past samples. See inline comments below, and also the file
+	% tempos in that frame, using an autocorrelation of the current feature frame
 	% autocorrelation.m for more details.
 
 	% Returns a list of (tempo, confidence) tuples, where the tempo is measured in
 	% samples of ACF lag, and the confidence is the height of the autocorrelation
 	% function at that lag.
 
-	function [tempos, confidences] = pick_likely_tempos(this, feature_frame, past_frame)
-		if size(feature_frame, 2) ~= 1 || size(past_frame, 2) ~= 1
+	function [tempos, confidences] = pick_likely_tempos(this, feature_frame)
+		if size(feature_frame, 2) ~= 1
 			warning('extra columns of feature_frame are ignored');
 		end
 
@@ -105,10 +108,9 @@ methods
 		% with the current frame have a constant tempo.
 		% see autocorrelation.m for more information
 
-		% in the beginning when we don't have a full previous frame, the
-		% available past samples will be padded out with zeros to make a full
-		% frame
-		acf = autocorrelation(feature_frame, past_frame);
+		% Equivalently, we can use a longer feature frame size and just split it
+		% into halves.
+		acf = autocorrelation(feature_frame);
 
 		% now pick peaks! (making sure to correct for 1-indexing in arrays)
 
@@ -120,11 +122,11 @@ methods
 		% HEURISTIC: use peaks at half the given tempo to support the
 		% given tempo. Do this by averaging the acf with a compressed
 		% version
-		doubled_acf = acf;
+		%doubled_acf = acf;
 
-		for i = 1:length(acf)/2;
-			doubled_acf(i) = acf(i)/2 + (acf(2*i - 1) + acf(2*i))/4;
-		end
+		%for i = 1:length(acf)/2;
+		%	doubled_acf(i) = acf(i)/2 + (acf(2*i - 1) + acf(2*i))/4;
+		%end
 
 		% could be useful for compound time music?
 		%tripled_acf = acf;
@@ -144,10 +146,11 @@ methods
 
 		allowed_tempos = this.params.tempo_lag_range';
 		[confidences, tempos] = findpeaks(...
-			doubled_acf(1+allowed_tempos), ...
+			acf(1+allowed_tempos), ...
 			allowed_tempos, ...
 			'MinPeakDistance', this.params.min_lag_samples/2, ...
 			'MinPeakProminence', 0.025, ...
+			'MinPeakHeight', 0.2, ...
 			'NPeaks', this.params.max_tempo_peaks, ...
 			'SortStr', 'descend');
 	end

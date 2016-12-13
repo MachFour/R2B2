@@ -9,7 +9,7 @@ classdef odf_klapuri < feature_extractor
 
 properties
     % low pass filter for interpolating the log magnitude spectrum
-	lp_cutoff_freq = 10; %Hz
+	lp_cutoff_freq = 20; %Hz
 	lp_order = 6;
 
 	num_mel_filters = 36;

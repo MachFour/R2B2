@@ -29,13 +29,13 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	audio_win_overlap_proportion = 0.5;
 	audio_win_type = @hann;
 
-	min_bpm = 35;
+	min_bpm = 20;
 	max_bpm = 240;
 
 	max_tempo_peaks = 8;
 	max_alignment_peaks = 4;
 
-	feature_win_time = 3; %seconds
+	feature_win_time = 6; %seconds
 	feature_win_overlap_proportion = 0.75;
 	% or maybe use a window that weights recent samples more than older (by a
 	% few seconds) samples

@@ -114,17 +114,17 @@ methods (Static)
 		%p = musical_model.lognormal_density(t1, log(scale), shape);
 
 		% From: PREFERRED TEMPO RECONSIDERED - Dirk Moelants
-		%f0 = 125/60; % 125 BPM in Hz
-		%fext = 1./t1; % tempo period in Hz
-		%beta = 8;
-		%fext_2 = fext.^2;
-		%f0_2 = f0^2;
-		%fext_4 = fext.^4;
-		%f0_4 = f0^4;
+		f0 = 125/60; % 125 BPM in Hz
+		fext = 1./t1; % tempo period in Hz
+		beta = 8;
+		fext_2 = fext.^2;
+		f0_2 = f0^2;
+		fext_4 = fext.^4;
+		f0_4 = f0^4;
 
-		%p = ((f0_2 - fext_2).^2 + beta*fext_2).^-0.5 - (fext_4 + f0_4).^-0.5;
+		p = ((f0_2 - fext_2).^2 + beta*fext_2).^-0.5 - (fext_4 + f0_4).^-0.5;
 
-		p = 1;
+		%p = 1;
 	end
 
 
@@ -147,10 +147,10 @@ methods (Static)
 
 		% ALTHOUGH, the mode of the lognormal distribution is not the same as
 		% the mean, so there's a slight difference between the expected value
-		% and the most likely value. 
+		% and the most likely value.
 		% The mode of a lognormal distribution with parameters mu and sigma is
 		% exp(mu - sigma^2) = exp(mu)exp(-sigma^2).
-		% So in order to get the mode equal to t1, we set the mu parameter to be 
+		% So in order to get the mode equal to t1, we set the mu parameter to be
 		% log(t1)*exp(sigma^2)
 
 		% Question: what's the variance? Should it be proportional to tempo?
@@ -158,20 +158,21 @@ methods (Static)
 		sigma = 0.025;
 		mu = log(t1)*exp(sigma^2);
 
-		p = musical_model.lognormal_density(t2, mu, sigma);
+		p = musical_model.lognormal_density(t2, mu, sigma)*...
+			musical_model.tempo_prior_prob(t2);
 	end
 
-	% transition probability is meant to reflect the fact that the expected new beat 
+	% transition probability is meant to reflect the fact that the expected new beat
 	% location is some multiple of the tempo after the previous one.
 	% This must allow for an arbitrary frame hope size and so we must be able to
 	% calculate the exact number of tempo multiples that are expected.
 
-	% The end of the frame will advance by frame_hop_size samples, so the alignment 
+	% The end of the frame will advance by frame_hop_size samples, so the alignment
 	% of the previous absolute beat time with respect to the new frame end time,
 	% is b1 (which is a negative beat alignment) minus the frame hop size.
-	% We then need to add multiples of t1 to get to a number in the range 
+	% We then need to add multiples of t1 to get to a number in the range
 	% [-t1 + 1, 0]. This is the new expected beat time. This cam be expressed as
-	% b2' = mod(b1 - feature_hop_size, -1*t1) 
+	% b2' = mod(b1 - feature_hop_size, -1*t1)
 	% (where the return value has the same sign as the divisor)
 
 	function p = beat_location_transition_prob(old_state, new_state)
@@ -184,18 +185,18 @@ methods (Static)
 		new_tempo = new_state.tempo_samples;
 
 
-		% variance in beat location transition prob: 
-		% If the tempo hasn't changed, the difference in beat locations should be 
-		% almost exactly a multiple of the tempo. Assume that maybe 95% of intervals 
+		% variance in beat location transition prob:
+		% If the tempo hasn't changed, the difference in beat locations should be
+		% almost exactly a multiple of the tempo. Assume that maybe 95% of intervals
 		% between beats at the same tempo lie within a quaver (tempo period/8) of the
-		% ideally expected time.  
+		% ideally expected time.
 
-		% for samples from a normal distribution, it is  expected that 95% of them 
+		% for samples from a normal distribution, it is  expected that 95% of them
 		% lie within 2 standard deviations of its mean. Then 2*sigma = tempo_period/8
 
 		% If the old and new tempos are different, it is not so clear what to
 		% do. Which tempo period should we take?
-		% For now, just take the average. This may be a terrible hack - but it has the 
+		% For now, just take the average. This may be a terrible hack - but it has the
 		% interpretation of a gradually changing tempo, maybe.
 
 		tempo = new_tempo;
@@ -217,7 +218,7 @@ methods (Static)
 
 		expected_alignment = mod(old_alignment - hop_size, -tempo);
 
-		% make the probability a normal distrubution with mean equal to the 
+		% make the probability a normal distrubution with mean equal to the
 		% absolute beat location corresponding to the expected alignment
 		expected_beat_loc = new_state.frame_end_time + ...
 			expected_alignment/feature_sample_rate;
@@ -281,7 +282,7 @@ methods (Static)
 	end
 
 	function prob = transition_prob(old_state, new_state)
-		t1 = old_state.tempo_period;		
+		t1 = old_state.tempo_period;
 		t2 = new_state.tempo_period;
 
 		% by independence
