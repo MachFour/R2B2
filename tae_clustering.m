@@ -15,7 +15,7 @@ classdef tae_clustering < tempo_alignment_estimator
 
 methods
 
-	function tae = tae_autocorrelation(params, feature_matrix, name)
+	function tae = tae_clustering(params, feature_matrix, name)
 		% superclass constructor
 		tae = tae@tempo_alignment_estimator(params, feature_matrix, name);
 	end
@@ -30,107 +30,83 @@ methods
 			error('frame number must be positive');
 		end
 
-		% frames of feature_win_length samples.
-		% The last sample of past_frame immediately preceeds the first sample of
-		% feature_frame. This is used to improve the quality of the autocorrelation.
 		feature_frame = this.get_feature_frame(frame_number);
-		%past_frame = this.get_prev_nonoverlapping_frame(frame_number);
-		%
-		%if ~isequal(size(feature_frame), size(past_frame))
-		%	error('feature_frame and past_frame must have the same size');
-		%end
-
-		% An equivalent operation is just to take a longer feature frame size
-		% and split it in half.
-
-
 		num_features = size(feature_frame, 2);
 
-		% holds lists of tempo/beat alignment estimates for each feature, in this frame
-		% the maximum length of each list is max_estimates
-		max_estimates_per_feature = ...
-			this.params.max_tempo_peaks*this.params.max_alignment_peaks;
-
-		frame_estimates = cell(1, num_features);
-
-		% for each feature, find the max_tempo_peaks most likely tempos (peaks of
-		% autocorrelation), and then for each of those tempos, find the
-		% max_alignment_peaks most likely beat alignments (peaks of beat alignment
-		% function).
-
-		% dictionary of tempo estimates (in samples) to list of features which
-		% estimated that tempo
-		tempo_estimates = containers.Map('int32', 'uint32');
+		feature_tempo_estimates = cell(1, num_features);
+		feature_beat_alignment_estimates = cell(1, num_features);
 
 		for n = 1:num_features
-			% holds all tempo/beat alignment estimate tuples for this feature and frame
-			feature_n_estimate_tuples = zeros(max_estimates_per_feature, 4);
-			estimate_number = 0;
-
-			[tempo_estimates_n, ~] = this.pick_likely_tempos(feature_frame(:, n));
-
-			for tempo_idx = 1:length(tempo_estimates_n)
-				estimated_tempo = tempo_estimates_n(tempo_idx);
-				if tempo_estimates.iskey(estimated_tempo)
-					% a previous feature (or features) also voted for this tempo
-					other_voters = tempo_estimates(estimated_tempo);
-					% append current feature to voter list
-					tempo_estimates(estimated_tempo) = [other_voters; n];
-				else
-					% start a new list of features voting for this tempo
-					tempo_estimates(estimated_tempo) = [n];
+			[feature_tempo_estimates{n}, ~] = ...
+				this.pick_likely_tempos(feature_frame(:, n));
+			
+			[feature_beat_alignment_estimates{n}, ~] = ...
+				this.pick_likely_beat_alignments(feature_frame(:, n));
+		end
+		
+		% distance function
+		alignment_dist = @(x, y) sqrt(sum(abs(x - y).^2));
+		alignment_min_sep = 3; % samples
+		
+		sample_to_bpm_factor = this.params.feature_sample_rate*60;
+		bpm_dist = @(x, y) sqrt(sum(sample_to_bpm_factor.*(1./x - 1./y)).^2);
+		tempo_min_sep = 4; % BPM
+		
+		tempo_cluster_dict = tae_clustering.cluster_estimate_lists(...
+			feature_tempo_estimates, bpm_dist, tempo_min_sep);
+		beat_alignment_cluster_dict = tae_clustering.cluster_estimate_lists(...
+			feature_beat_alignment_estimates, alignment_dist, alignment_min_sep);
+		
+		% make estimate tuples as the cross product of all clustered tempos and
+		% all clustered_beat_alignments
+		
+		% but what if there are no estimates of one or the other type?
+		
+		frame_tempos = tempo_cluster_dict.keys();
+		frame_alignments = beat_alignment_cluster_dict.keys();
+		
+		num_frame_tempos = length(frame_tempos);
+		num_frame_alignments = length(frame_alignments);
+		
+		frame_estimate_list = zeros(num_frame_tempos*num_frame_alignments, 4);
+		
+		combined_estimate_number = 0;
+		
+		for tempo_idx = 1:num_frame_tempos
+			tempo_estimate = frame_tempos{tempo_idx};
+			tempo_popularity = tempo_cluster_dict(tempo_estimate);
+			
+			for align_idx = 1:num_frame_alignments
+				alignment_estimate = frame_alignments{align_idx};
+				alignment_popularity = beat_alignment_cluster_dict(alignment_estimate);
+				
+				% only allow tempos and beat alignments that more than one
+				% feature votes for, and also the alignment estimate has to be
+				% within one beat period of the end of the frame
+				if tempo_popularity > 1 && alignment_popularity > 1 ...
+						&& tempo_estimate > this.params.min_lag_samples/4 ...
+						&& tempo_estimate > abs(alignment_estimate)
+					combined_estimate_number = combined_estimate_number + 1;
+					frame_estimate_list(combined_estimate_number, :) = [
+						round(tempo_estimate), tempo_popularity, ...
+						round(alignment_estimate), alignment_popularity];
 				end
 			end
 		end
+		
+		frame_estimate_list = frame_estimate_list(1:combined_estimate_number, :);
 
-		% cluster tempo votes
-		clustered_tempo_estimates_dict = mean_shift_dict_cluster(tempo_estimates);
-
-		% for each tempo estimate (key) in the clustered tempo estimates dict,
-		% replace its value (list of voting features) by just the number of features.
-		% Alternatives: sum of confidences? Or actually use which features vote for
-		% it?
-
-		clustered_tempo_estimates = clustered_tempo_estimates_dict.keys();
-		for tempo_idx = 1:length(clustered_tempo_estimates)
-			tempo_estimate = clustered_tempo_estimates(tempo_idx);
-			% replace its value (which is a list) by the length of that list
-			clustered_tempo_estimates_dict(tempo_estimate) = ...
-				length(clustered_tempo_estimates_dict(tempo_estimate));
-		end
-
-
-
-		% now pick beat alignments for each tempo
-		for tempo_idx = 1:length(clustered_tempo_estimates)
-			tempo_estimate = clustered_tempo_estimates(tempo_idx);
-			num_voting_features = clustered_tempo_estimates_dict(tempo_estimate);
-
-			for n = 1:num_features
-				[align_estimates, align_confidences] = this.pick_likely_beat_alignments(...
-					feature_frame(:, n), tempo_estimate);
-
-				for alignment_idx = 1:length(align_estimates)
-					estimate_number = estimate_number + 1;
-					feature_n_estimate_tuples(estimate_number, :) = [
-						tempo_estimate, ...
-						num_voting_features, ...
-						align_estimates(alignment_idx), ...
-						align_confidences(alignment_idx)];
-				end
-
-			% trim to size
-			feature_n_estimate_tuples = feature_n_estimate_tuples(1:estimate_number, :);
-			frame_estimates{n} = feature_n_estimate_tuples;
-
-			% save internally for plotting, data output, etc.
-			this.tempo_alignment_estimates{frame_number, n} = feature_n_estimate_tuples;
-			end
-
-		end
+		%keep return type the same as before
+		frame_estimates = cell(1, 1);
+		
+		frame_estimates{1} = frame_estimate_list;
+		
+		% save internally for plotting, data output, etc.
+		this.tempo_alignment_estimates{frame_number, 1} = frame_estimate_list;
 
 	end
 
+	
 	% Given a feature frame for a single feature, determine which are the most likely
 	% tempos in that frame, using an autocorrelation of the current feature frame
 	% autocorrelation.m for more details.
@@ -199,91 +175,25 @@ methods
 
 
 	% For the given tempo estimate, determine likely beat alignments, by finding the
-	% shift for which a set of impulses spaced at that tempo estimate best correlates
-	% with the given feature frame.
-	% This vaguely follows the procedure from 'Context-Dependent Beat tracking'
-	function [alignments, confidences] = pick_likely_beat_alignments(this, ...
-			feature_frame, tempo_estimate)
-
+	% peaks of the feature frame. The feature frame must therefore be an onset
+	% detection function, so that it peaks at significant events in the audio.
+	function [alignments, confidences] = pick_likely_beat_alignments(this, feature_frame)
 		if size(feature_frame, 2) ~= 1
 			warning('extra columns of feature_frame are ignored');
 		end
 
-		% make an impulse train for each tempo hypothesis,
-		% then slide it along the detection function for one tempo period,
-		% to find where it lines up the best
-		% feature needs to be a column vector
-
-		alignment_function = beat_alignment_function(feature_frame, tempo_estimate);
-
-		% max distance between peaks depends on the tempo: we're making the
-		% assumption that we don't need to distnguish between beat locations closer
-		% than half a semiquaver at the given tempo estimate
-
-
 		[confidences, alignments]  = findpeaks(...
-			alignment_function, ...
-			0:(tempo_estimate-1), ...
-			'MinPeakDistance', tempo_estimate/8, ...
+			feature_frame, ...
+			0:this.params.feature_win_length -1, ...
 			'NPeaks', this.params.max_alignment_peaks, ...
 			'SortStr', 'descend');
 
 		% we make sign of the beat alignment negative, to reflect that the offsets
 	 	% are calculated backwards from the end of the current feature frame
 		alignments = -1*alignments;
-
 	end
 
-
-	% Narrows down the search of possible tempos to only a small
-	% subset identified by the tempo/alignment estimator as likely.
-	% Different features will have picked different peaks for their autocorrelation
-	% functions, but if the different estimates are close enough, we treat them as
-	% both estimating the same tempo.  The idea is that if a lot of different
-	% features agree on the tempo, then it's more likely to be that tempo.
-
-	% PARAMETERS:
-	% tempo_estimates = cell(1, this.num_features)
-	%	  is a cell matrix containing a set of tempo estimates (no confidences)
-	%	  for the current frame. There is one set for each feature, which means the cell
-	%	  matrix is 1 row (since it's only one frame's worth of data) by n columns, where
-	%	  n is the number of features. The tempo estimates should be in SAMPLES.
-	function clustered_tempos = cluster_tempo_estimates(this, tempo_estimates)
-
-		% stores the set of tempos to search over in this iteration of the
-		% Viterbi algorithm
-		% each tempo is tagged with the number of the feature that it comes
-		% from.
-		candidate_tempos = zeros(this.num_features*this.params.max_tempo_peaks, 2);
-		num_candidate_tempos = 0;
-
-		for feature_idx = 1:this.num_features
-			tempo_estimates_list = tempo_estimates{feature_idx};
-			for estimate_idx = 1:length(tempo_estimates_list)
-				num_candidate_tempos = num_candidate_tempos + 1;
-
-				tempo_estimate = tempo_estimates_list(estimate_idx);
-				candidate_tempos(num_candidate_tempos, 1) = tempo_estimate;
-				candidate_tempos(num_candidate_tempos, 2) = feature_idx;
-			end
-		end
-		% trim list to its actual length
-		candidate_tempos = candidate_tempos(1:num_candidate_tempos, :);
-
-		% now group together similar tempo estimates;
-		% use mean shift clustering *BY BPM*.
-		% 2BPM seems like a reasonable
-		% cluster width
-
-		sample_to_bpm_factor = this.params.feature_sample_rate*60;
-
-		bpm_distance = @(x, y) sqrt(sum(sample_to_bpm_factor.*(1./x - 1./y)).^2);
-		cluster_width = 4; % BPM
-		clustered_tempos = mean_shift_cluster(candidate_tempos, ...
-			bpm_distance, cluster_width);
-		% what to do if there are no tempos?
-	end
-
+	
 	% for each sample frame, plot the detection function,
 	% ACF with peaks indicated,
 	% and then a plot of superimposed tempo and beat alignment estimates
@@ -382,5 +292,54 @@ methods
 	end
 
 end % methods
+
+methods (Static)
+	
+	% takes in a single dimensional cell array of estimates for each feature, 
+	% be they tempo or phase, and turns the whole array into a dictionary whose 
+	% keys are the clustered estimates (using the mean shift dict cluster function),
+	% and whose values for each key are the indices/lists of the input cell array 
+	% that contained an estimate inside that cluster.
+	
+	% min_sep and dist are as for mean_shift_dict_cluster.m
+
+	function clustered_estimates = cluster_estimate_lists(estimate_lists, dist, min_sep)
+		% value is a list of integers, so has to be specified as 'any' type
+		unclustered_estimates = containers.Map('KeyType', 'double', 'ValueType', 'any');
+		
+		for list_idx = 1:length(estimate_lists)
+			estimate_list = estimate_lists{list_idx};
+			
+			for estimate_idx = 1:length(estimate_list)
+				estimate = estimate_list(estimate_idx);
+				if unclustered_estimates.isKey(estimate)
+					% a previous feature (or features) also had this estimate
+					other_voters = unclustered_estimates(estimate);
+					% append current feature to voter list
+					unclustered_estimates(estimate) = [other_voters; list_idx];
+				else
+					% start a new list of features voting for this estimate
+					unclustered_estimates(estimate) = [list_idx];
+				end
+			end
+		end
+		% cluster tempo votes
+		clustered_estimates = mean_shift_dict_cluster(unclustered_estimates, ...
+			dist, min_sep);
+
+		% for each estimate (key) in the clustered estimates dict,
+		% replace its value (list of voting features) by just the number of features.
+		% Alternatives: sum of confidences? Or actually use which features vote for
+		% it?
+
+		cluster_centres = clustered_estimates.keys();
+		for cluster_idx = 1:clustered_estimates.length
+			cluster_centre = cluster_centres{cluster_idx};
+			% replace its value (which is a list) by the length of that list
+			num_voters = length(clustered_estimates(cluster_centre));
+			clustered_estimates(cluster_centre) = num_voters;
+		end
+	end
+end % methods (Static)
 
 end % classdef

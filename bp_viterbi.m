@@ -132,7 +132,7 @@ methods
 		num_new_states = 0;
 
 		% add all of the estimates
-		for n = 1:this.num_features
+		for n = 1:size(tempo_alignment_estimates, 2)
 			feature_n_estimates = tempo_alignment_estimates{n};
 			for estimate_idx = 1:size(feature_n_estimates, 1)
 				curr_tp_estimate = feature_n_estimates(estimate_idx, :);
