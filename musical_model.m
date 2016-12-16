@@ -123,8 +123,6 @@ methods (Static)
 		f0_4 = f0^4;
 
 		p = ((f0_2 - fext_2).^2 + beta*fext_2).^-0.5 - (fext_4 + f0_4).^-0.5;
-
-		%p = 1;
 	end
 
 
@@ -132,8 +130,8 @@ methods (Static)
 	% in a song. t1 and t2 are the previous and next tempo periods respectively,
 	% measured in seconds
 	% This is taken from Klapuri's paper (equation 21).
-	function p = tempo_transition_prob(t1, t2)
-		if t1 <= 0 || t2 <= 0
+	function p = tempo_transition_prob(old_tempo, new_tempo)
+		if old_tempo <= 0 || new_tempo <= 0
 			error('tempo values must be positive');
 		end
 		% first term is a normal distribution as a function
@@ -155,11 +153,13 @@ methods (Static)
 
 		% Question: what's the variance? Should it be proportional to tempo?
 		% Or the probability of the last state?
-		sigma = 0.025;
-		mu = log(t1)*exp(sigma^2);
+		%sigma = 0.1;
+		%mu = log(t1)*exp(sigma^2);
 
-		p = musical_model.lognormal_density(t2, mu, sigma)*...
-			musical_model.tempo_prior_prob(t2);
+		%p = musical_model.lognormal_density(t2, mu, sigma) * ...
+		%	musical_model.tempo_prior_prob(t2);
+		% tempo percentage change
+		p = 1 - abs(new_tempo - old_tempo)/old_tempo;
 	end
 
 	% transition probability is meant to reflect the fact that the expected new beat
@@ -286,10 +286,10 @@ methods (Static)
 		t2 = new_state.tempo_period;
 
 		% by independence
-		tempo_prob = musical_model.tempo_transition_prob(t1, t2);
-		beat_location_prob = ...
-			musical_model.beat_location_transition_prob(old_state, new_state);
-		prob = tempo_prob * beat_location_prob;
+		prob = musical_model.tempo_transition_prob(t1, t2);
+		%beat_location_prob = ...
+		%	musical_model.beat_location_transition_prob(old_state, new_state);
+		%prob = tempo_prob * beat_location_prob;
 	end
 
 	function prob = prior_prob(state)

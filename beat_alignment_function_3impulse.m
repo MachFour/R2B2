@@ -7,8 +7,9 @@
 % frame should be a column vector. Returns a column vector
 
 % Author: Max Fisher
-function baf = beat_alignment_function(frame, tempo_spacing)
+function baf = beat_alignment_function_3impulse(frame, tempo_spacing)
 	SPIKE_WIDTH = 2;
+	NUM_SPIKES = 3;
 
 	frame_length = size(frame, 1);
 	if frame_length ~= length(frame)
@@ -24,22 +25,22 @@ function baf = beat_alignment_function(frame, tempo_spacing)
 
 	impulse_train = zeros(size(frame));
 	% tempo is in lag_units (seconds)
-	for w = 1:SPIKE_WIDTH
-	    impulse_train(w:tempo_spacing:end-tempo_spacing) = 1;
-	end
-	% make impulses of decreasing height to weight more recent onsets
+	for spike_idx = 1:NUM_SPIKES
+		% double() for matlab type compatibility
+		indices = spike_idx*double(tempo_spacing) + (1:SPIKE_WIDTH);
+		if max(indices) > frame_length
+			%warning('spikes do not fit inside frame');
+		else
+			impulse_train(indices) = 1;
+		end
 
-	% exponential decay of weighting:
-	% w(n) = a^(-a*n/N)
-	% a = 1 disables
-	%a = 1;
-	%impulse_weighting = a.^(-a/frame_length*(1:frame_length)');
-	%impulse_train = impulse_train.*impulse_weighting;
+	end
 
 	% normalise impulse train to have sum 1,
 	% so it has the effect of a weighted sum
 	% of odf samples
-	impulse_train = impulse_train/sum(impulse_train);
+	% note that if spikes fall off the end, this won't be accounted for
+	impulse_train = impulse_train/(SPIKE_WIDTH*NUM_SPIKES);
 
 %  	figure; plot(impulse_train); hold on; plot(frame);
 %  	title(sprintf('Reversed feature frame and impulses for comb width %d', tempo_spacing));

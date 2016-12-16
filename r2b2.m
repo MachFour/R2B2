@@ -32,11 +32,11 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	min_bpm = 20;
 	max_bpm = 240;
 
-	max_tempo_peaks = 8;
-	max_alignment_peaks = 4;
+	max_tempo_peaks = 6;
+	max_alignment_peaks = 3;
 
 	feature_win_time = 6; %seconds
-	feature_win_overlap_proportion = 0.75;
+	feature_win_overlap_proportion = 0.875;
 	% or maybe use a window that weights recent samples more than older (by a
 	% few seconds) samples
 	feature_win_type = 'rect';
@@ -66,18 +66,18 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	% VITERBI ALGORITHM
 	%
 
-	ta_estimator = tae_autocorrelation(params, feature1.feature_matrix, 'tae-acf');
+	estimator = tae_autocorrelation(params, feature1.feature_matrix, 'tae-acf');
 	viterbi = bp_viterbi(params, 'Viterwheats', num_features);
 
 	viterbi.initialise
 
 	% iterate over each frame, giving the viterbi algorithm its observations
-	num_feature_frames = ta_estimator.num_feature_frames;
+	num_feature_frames = estimator.num_feature_frames;
 
 	for k = 1:num_feature_frames
 		% get all features' estimates at once
-		kth_feature_frame_matrix = ta_estimator.get_feature_frame(k);
-		kth_frame_ta_estimates = ta_estimator.pick_tempo_and_alignment_estimates(k);
+		kth_feature_frame_matrix = estimator.get_feature_frame(k);
+		kth_frame_ta_estimates = estimator.pick_tempo_and_alignment_estimates(k);
 		viterbi.step_frame(kth_feature_frame_matrix, kth_frame_ta_estimates);
 	end
 
@@ -95,7 +95,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 			fprintf(outfile, '%.3f\n', timestamp);
 		end
 
-		ta_estimator.output_tempo_alignment_data(data_output_directory);
+		estimator.output_estimate_data(data_output_directory);
 
 	else
 		disp('Beat times');
@@ -135,7 +135,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 		for k = sample_frames
 			figure; hold on;
 			for n = 1:num_features
-				estimates_n = ta_estimator.tempo_alignment_estimates{k, n};
+				estimates_n = estimator.tempo_alignment_estimates{k, n};
 				%plot in seconds
 				if isempty(estimates_n)
 					warning('No estimates for feature %d in frame %d', n, k);

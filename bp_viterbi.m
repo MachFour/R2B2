@@ -54,19 +54,7 @@ methods
 
 	% compute initial states and probabilities, given no tempos
 	function initialise(this)
-		% restrict to 50-180 BPM initially - low bpm makes it really
-		% inefficient!!! (there are a huge number of states)
-		min_initial_bpm = 40;
-		max_initial_bpm = 200;
-
-		sample_to_bpm_factor = this.params.feature_sample_rate*60;
-		min_tempo_samples = round(sample_to_bpm_factor/max_initial_bpm);
-		max_tempo_samples = round(sample_to_bpm_factor/min_initial_bpm);
-
-		% choose a sparser set of tempos to start with
-		initial_tempos = (min_tempo_samples:2:max_tempo_samples)';
-		beat_coarseness = 4;
-		initial_states = this.generate_all_states(initial_tempos, beat_coarseness);
+		initial_states = this.generate_initial_states;
 		this.current_states = initial_states;
 		this.current_probabilities = viterbi_helper.initial_forward_message(initial_states);
 
@@ -75,6 +63,23 @@ methods
 		this.winning_probabilities = zeros(50, 1);
 
 	end
+	
+	function states = generate_initial_states(this)
+		% restrict to 50-180 BPM initially - low bpm makes it really
+		% inefficient!!! (there are a huge number of states)
+		min_initial_bpm = 45;
+		max_initial_bpm = 160;
+
+		sample_to_bpm_factor = this.params.feature_sample_rate*60;
+		min_tempo_samples = round(sample_to_bpm_factor/max_initial_bpm);
+		max_tempo_samples = round(sample_to_bpm_factor/min_initial_bpm);
+
+		% choose a sparser set of tempos to start with
+		initial_tempos = (min_tempo_samples:2:max_tempo_samples)';
+		beat_coarseness = 10;
+		states = this.generate_all_states(initial_tempos, beat_coarseness);
+	end
+
 
 
 	% converts tempo and beat alignment in samples to a model state which
@@ -120,6 +125,9 @@ methods
 		max_tp_estimates_per_feature = ...
 			this.params.max_tempo_peaks * this.params.max_alignment_peaks;
 
+		%testing: add initial states
+		%initial_states = this.generate_initial_states;
+		
 		% initialise states cell array
 
 		% frame updates are O(n^2) in this number!!
@@ -130,6 +138,11 @@ methods
 
 		new_states = cell(max_states_to_search, 1);
 		num_new_states = 0;
+		
+		%for state_idx = 1:length(initial_states)
+		%	num_new_states = num_new_states + 1;
+		%	new_states{num_new_states} = initial_states{state_idx};
+		%end
 
 		% add all of the estimates
 		for n = 1:size(tempo_alignment_estimates, 2)
@@ -142,19 +155,25 @@ methods
 				num_new_states = num_new_states + 1;
 				new_states{num_new_states} = ...
 					this.create_state(tempo_estimate, alignment_estimate);
+				% add tempo harmonics as estimates?
 			end
 		end
 
 		% Trim cell array down to size
 		new_states = new_states(1:num_new_states);
+		
+		% add the previously winning state (or top two>?)
+		if this.frame_number > 1
+			new_states{end} = this.winning_states{this.frame_number - 1};
+		end
 
 		past_states = this.current_states;
 		past_probabilities = this.current_probabilities;
 
 		% in exceptional circumstances...
 		if isempty(new_states)
-			% reuse our past states again
-			new_states = past_states;
+			% reset to initial states again?
+			new_states = this.generate_initial_states;
 		end
 
 		new_probs = viterbi_helper.update_forward_message(past_states, past_probabilities, ...
