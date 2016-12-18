@@ -2,41 +2,43 @@
 % 1 dimensional mean shift clustering, which groups points that are close together
 % into clusters, represented by their arithmetic mean.
 % Clusters are returned in the form of a 2x1 cell matrix, where the
-% first column holds the mean of the cluster, and the second point holds a list
-% of the original data rows that are contained in that cluster.
+% first column holds the mean of the cluster, and the second point holds a
+% list of the metadata for each of the original datapoints contained in that cluster.
+% Distance between clusters is measured using the standard euclidean distance metric
 
 % from https://en.wikipedia.org/wiki/Mean_shift
 
 % PARAMETERS:
-% data = matrix(n, k)
-% 	is the 1 dimensional cell array of data points to cluster. The extra
-% 	k-1 columns can contain other information that is kept along with the data.
-% dist = @(x, y)
-%	is a function handle describing how to measure the distance
-%	between the values x = data(a, 1) and y = data(b, 1) of elements a and b
-%	of the data array. It should return a nonnegative real number.
-%	e.g. dist = @(x, y) sqrt(sum(abs(x - y).^2));
-% max_dist
-% 	is a nonnegative real number representing how far two datapoints in the same
-%	cluster can be.
+% data = matrix(n, 2)
+% 	is the 1 dimensional array of data points to cluster, together with an extra
+% 	column of 'metadata' about the data point.
+% min_separation
+% 	is a nonnegative real number representing how close two datapoints distinct
+% 	clusters can be to each other
 
 
-function clusters = mean_shift_cluster(data, dist, max_dist)
+function [cluster_means, cluster_metadata] = mean_shift_cluster2(data, min_separation)
+	if ~isequal(size(data, 2), 2)
+		error('data is of incorrect size');
+	end
+
 	n = size(data, 1);
-	k = size(data, 2);
 
 	if n == 0
-		clusters = {};
-		return;
+		cluster_means = [];
+		cluster_metadata = {};
+		return
 	end
 
 	if n == 1
-		clusters = {data{1}, data(1, 1:k)};
-		return;
+		cluster_means = data(1, 1);
+		cluster_metadata = data(1, 2);
+		return
 	end
 
 	% initialise
 	original_sorted_data = sortrows(data, 1);
+	% copy data
 	cluster_data = original_sorted_data;
 
 	% iterate until convergence (do while loop)
@@ -47,18 +49,18 @@ function clusters = mean_shift_cluster(data, dist, max_dist)
 		for i = 1:n
 			x_i = old_cluster_data(i, 1);
 
-			% find the set of data points within max_dist
+			% find the set of data points within min_separation
 			% since this is in 1 dimension we can just search forward and backward to
 			% find the bounds
 			high_idx = i;
 			low_idx = i;
 			% search for highest and lowest index bounds such that the
 			% distance between the data point and the value at that index
-			% is less than max_dist
-			while high_idx < n && dist(old_cluster_data(high_idx + 1, 1), x_i) < max_dist
+			% is less than min_separation
+			while high_idx < n && distance(old_cluster_data(high_idx + 1, 1), x_i) <= min_separation - eps
 				high_idx = high_idx + 1;
 			end
-			while low_idx > 1 && dist(old_cluster_data(low_idx - 1, 1), x_i) < max_dist
+			while low_idx > 1 && distance(old_cluster_data(low_idx - 1, 1), x_i) <= min_separation - eps
 				low_idx = low_idx - 1;
 			end
 
@@ -67,57 +69,65 @@ function clusters = mean_shift_cluster(data, dist, max_dist)
 			average_value = sum(old_cluster_data(nearby_data, 1))/length(nearby_data);
 			cluster_data(i, 1) = average_value;
 
-			% keep the extra information columns
-			cluster_data(i, 2:k) = old_cluster_data(i, 2:k);
+			% keep the metadata
+			cluster_data(i, 2) = old_cluster_data(i, 2);
 		end
 		% test for convergence
-		if dist(cluster_data(1:n, 1), old_cluster_data(1:n, 1))/n < eps
-			break;
+		if distance(cluster_data(:, 1), old_cluster_data(:, 1))/n < eps
+			break
 		end
 	end
 
-	% now create a cell array where the first column holds the mean of each
-	% cluster, and the second column holds a list of the original data rows
-	% in that cluster.
-	% Problem: not sure how to preallocate array size for rows in the second column.
+	% now create an array of the cluster means, and a cell array to hold the list of
+	% metadata values for each of the datapoints in the respective clusters.
 
-	clusters = cell(n, 2);
-	% the following variables need to keep their values across loop
-	% iterations:
-	% 	current_cluster_idx - index into rows of clusters cell array
-	% 	current_cluster_size - index into clusters{current_cluster_idx, 2} array
-	% 	current_cluster_mean - what the value of the current cluster is
+	cluster_means = zeros(n, 1);
+	cluster_metadata = cell(n, 1);
+	num_clusters = 0;
 
-	for data_index = 1:n
-		% which cluster are we adding to (represented by the mean)
-		current_data_row = original_sorted_data(data_index, 1:k);
-		% which cluster is this row of data in? (represented by the mean)
-		data_cluster = cluster_data(data_index, 1);
+	i = 1;
+	while i <= n
+		current_cluster_mean = cluster_data(i, 1);
+		current_cluster_metadata = zeros(n, 1);
+		current_cluster_size = 0;
 
-		if data_index == 1 || dist(data_cluster, current_cluster_mean) > eps
-			% make a new cluster, with a size of 1
-			if data_index == 1
-				current_cluster_idx = 1;
+		% for as long as we can increment i and the key cluster stays the same, we're
+		% still in the same cluster
+
+		% this loop will always run once, since i = j initially.
+
+		for j = i:n
+			cluster_j_mean = cluster_data(j);
+			if distance(cluster_j_mean, current_cluster_mean) <= min_separation - eps
+				% same cluster, add jth key's value to current cluster values
+				current_cluster_size = current_cluster_size + 1;
+				current_cluster_metadata(current_cluster_size) = ...
+					original_sorted_data(j, 2);
 			else
-				% increment cluster
-				current_cluster_idx = current_cluster_idx + 1;
+				% we're out of the cluster (since cluster_data is sorted)
+				i = j - 1;
+				break
 			end
-			current_cluster_size = 1;
-			current_cluster_mean = cluster_data(data_index, 1);
-
-			clusters{current_cluster_idx, 1} = current_cluster_mean;
-			clusters{current_cluster_idx, 2} = current_data_row;
-		else
-			% it's a part of the existing cluster, add the data row
-			current_cluster_size = current_cluster_size + 1;
-			% get the existing rows and add one
-			current_cluster_data_rows = clusters{current_cluster_idx, 2};
-			current_cluster_data_rows(current_cluster_size, 1:k) = current_data_row;
-			% put them back
-			clusters{current_cluster_idx, 2} = current_cluster_data_rows;
 		end
+		% here, j is equal to the index of the last successfully processed index of
+		% the cluster_data array. Now move to the next cluster
+		i = i + 1;
+
+		% Trim metadata list to size
+		current_cluster_metadata = current_cluster_metadata(1:current_cluster_size);
+
+		% make sure to save the cluster!
+		num_clusters = num_clusters + 1;
+		cluster_means(num_clusters) = current_cluster_mean;
+		cluster_metadata{num_clusters} = current_cluster_metadata;
 	end
-	% trim zero rows
-	clusters = clusters(1:current_cluster_idx, 1:2);
+
+	% trim to correct size
+	cluster_means = cluster_means(1:num_clusters);
+	cluster_metadata = cluster_metadata(1:num_clusters);
+
 end
 
+function d = distance(x, y)
+	d = sqrt(sum(abs(x - y)).^2);
+end

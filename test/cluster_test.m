@@ -1,33 +1,71 @@
 data = [
-1.0000,    1.0000
-1.1000,    2.0000
-1.0500,    3.0000
-3.0000,    4.0000
-3.0000,    5.0000
-1.5000,    6.0000
-10.0000,    7.0000
-10.1000,    8.0000
-10.2000,    9.0000
-10.3000,   10.0000
-20.0000,   11.0000
-30.0000,   12.0000
+1,		1;
+1.1,	2;
+1.05,	3;
+3,		4;
+3,		5;
+1.5,	6;
+10,		7;
+10.1,	8;
+10.2,	9;
+10.3,	10;
+20,		11;
+30,		12
 ];
 
-desired_output = {
-1.05, [1, 1; 1.05, 3; 1.1, 2]
-1.5,  [1.5, 6]
-3,    [3,4;3,5]
-10.1  [10, 7; 10.1, 8; 10.2, 9]
-10.3, [10.3, 10]
-20,   [20,11]
-30,   [30,12]
+% min separation = 0.1
+desired_clusters01 = [
+1.05
+1.5
+3
+10
+10.1
+10.2
+10.3
+20
+30
+];
+
+desired_metadata01 = {
+[1; 3; 2]
+6
+[4; 5]
+7
+8
+9
+10
+11
+12
 };
 
-dist = @(x, y) sqrt(sum(abs(x - y).^2));
-max_dist = 0.1;
-clusters = mean_shift_cluster(data, dist, max_dist);
+% min separation = 0.11
+desired_clusters011 = [
+1.05
+1.5
+3
+10.149999999999999
+20
+30
+];
 
-if isequal(clusters, desired_output)
+desired_metadata011 = {
+[1; 3; 2]
+6
+[4; 5]
+[7; 8; 9; 10]
+11
+12
+};
+
+
+[clusters01, metadata01] = mean_shift_cluster(data, 0.1);
+
+[clusters011, metadata011] = mean_shift_cluster(data, 0.11);
+
+if isequal(clusters01, desired_clusters01) ...
+	&& isequal(metadata01, desired_metadata01) ...
+	&& isequal(clusters011, desired_clusters011) ...
+	&& isequal(metadata011, desired_metadata011)
 	disp('Test passed');
 else
 	disp('Test failed');
