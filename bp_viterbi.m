@@ -75,7 +75,7 @@ methods
 		max_tempo_samples = round(sample_to_bpm_factor/min_initial_bpm);
 
 		% choose a sparser set of tempos to start with
-		initial_tempos = (min_tempo_samples:2:max_tempo_samples)';
+		initial_tempos = (min_tempo_samples:3:max_tempo_samples)';
 		beat_coarseness = 10;
 		states = this.generate_all_states(initial_tempos, beat_coarseness);
 	end

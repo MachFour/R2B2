@@ -6,3 +6,7 @@
 - some sort of meter variable?
 
 - fixed lag smoothing??
+
+- clustering
+- meter variable? octave correction
+- check beat alignment transitino prob
