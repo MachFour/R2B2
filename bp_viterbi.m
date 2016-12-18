@@ -63,7 +63,7 @@ methods
 		this.winning_probabilities = zeros(50, 1);
 
 	end
-	
+
 	function states = generate_initial_states(this)
 		% restrict to 50-180 BPM initially - low bpm makes it really
 		% inefficient!!! (there are a huge number of states)
@@ -85,8 +85,21 @@ methods
 	% converts tempo and beat alignment in samples to a model state which
 	% measures. Note that beat alignment is negative
 	function s = create_state(this, tempo_samples, beat_alignment)
-		s = model_state(this.params, this.frame_number, ...
-			tempo_samples, beat_alignment);
+		s = model_state(this.params, this.frame_number, tempo_samples, beat_alignment);
+	end
+
+	function s = copy_past_state(this, past_state)
+		if past_state.frame_number > this.frame_number
+			error('past state has a larger frame number than current frame number');
+		end
+		tempo = past_state.tempo_samples;
+		old_beat_alignment = past_state.beat_alignment;
+		frame_difference = this.frame_number - past_state.frame_number;
+		frame_hop_size = this.params.feature_hop_size;
+
+		beat_alignment = viterbi_helper.project_beat_alignment(...
+			old_beat_alignment, tempo, frame_difference, frame_hop_size);
+		s = model_state(this.params, this.frame_number, tempo, beat_alignment);
 	end
 
 	% gives the Viterbi algorithm a frame of observations (feature data), so that it
@@ -127,7 +140,7 @@ methods
 
 		%testing: add initial states
 		%initial_states = this.generate_initial_states;
-		
+
 		% initialise states cell array
 
 		% frame updates are O(n^2) in this number!!
@@ -138,7 +151,7 @@ methods
 
 		new_states = cell(max_states_to_search, 1);
 		num_new_states = 0;
-		
+
 		%for state_idx = 1:length(initial_states)
 		%	num_new_states = num_new_states + 1;
 		%	new_states{num_new_states} = initial_states{state_idx};
@@ -161,10 +174,11 @@ methods
 
 		% Trim cell array down to size
 		new_states = new_states(1:num_new_states);
-		
+
 		% add the previously winning state (or top two>?)
 		if this.frame_number > 1
-			new_states{end} = this.winning_states{this.frame_number - 1};
+			prev_winning_state = this.winning_states{this.frame_number - 1};
+			new_states{end} = this.copy_past_state(prev_winning_state);
 		end
 
 		past_states = this.current_states;
@@ -176,8 +190,8 @@ methods
 			new_states = this.generate_initial_states;
 		end
 
-		new_probs = viterbi_helper.update_forward_message(past_states, past_probabilities, ...
-			new_states, feature_data);
+		new_probs = viterbi_helper.update_forward_message(past_states, ...
+			past_probabilities, new_states, feature_data);
 
 		% overwrite past information now we don't need them any more
 		this.current_states = new_states;

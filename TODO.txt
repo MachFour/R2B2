@@ -10,3 +10,21 @@
 - clustering
 - meter variable? octave correction
 - check beat alignment transitino prob
+
+PROBLEM:
+beat alignment is calculated modulo the tempo. That is, it is impossible to have a beat alignment larger than the tempo period in samples.
+When the beat alignment is close to the tempo period, close to the point at which it wraps around, this causes problems when hopping frames and trying to project forward previous estimates of beat alignment.
+
+Concrete example:
+frame hop size = 128
+previous frame's beat alignment was -87, tempo 106 samples
+projecting one frame and tempo period forward would give -87 - 128 + 106 = -109
+but making this modulo the tempo period means you add another 106 to give -3.
+This means a beat is skipped.
+
+Winning estimates in the current frame had a just slower tempo and picking a very similar beat location led to a slightly reduced beat alignment, which fit inside the longer tempo period: 110 samples tempo period, -97 beat alignment.
+
+Solution: make beat alignment modulo the frame hop size?
+But if the frame hop size is smaller than the tempo period, we may run into problems again.
+
+check heater

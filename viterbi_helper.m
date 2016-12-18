@@ -155,102 +155,79 @@ methods (Static)
 		frame_length = size(observations, 1);
 		num_features = size(observations, 2);
 		num_states = size(states, 1);
-
-		% first, calculate the autocorrelation function for each feature.
-		% enhancement -> pass in the values for each tempo, from the tempo_alignment
-		% estimator.
-
-		% autocorrelation function returns a vector of half the frame_length
-		acf_data = zeros(frame_length/2, num_features);
-
-		for n = 1:num_features
-			acf_data(:, n) = autocorrelation(observations(:, n));
-		end
-
-		% Now, for each of the tempos found in the list of state, calculate the
-		% beat alignment function. To save recalculating the BAF, we create a map of
-		% tempos to index of the beat alignment function table, so we can do lookups
-		% only knowing the tempo value (as found in the state)
-		num_tempos = 0;
-		idx_for_tempo = containers.Map('KeyType', 'int32', 'ValueType', 'uint32');
-
-		% record longest tempo just to preallocate size of beat alignment function
-		% array. (since the beat alignment function is as long as the given tempo,
-		% in samples. So clearly, they won't all be this long, just the slowest is.)
-		longest_tempo_period = 0;
-
-		% create the map
-		for state_idx = 1:num_states
-			state = states{state_idx};
-			tempo_of_state = state.tempo_samples;
-			if tempo_of_state > longest_tempo_period
-				longest_tempo_period = tempo_of_state;
-			end
-			if ~isKey(idx_for_tempo, tempo_of_state)
-				% add to map
-				num_tempos = num_tempos + 1;
-				idx_for_tempo(tempo_of_state) = num_tempos;
-			end
-		end
-
-		baf_data = zeros(longest_tempo_period, num_tempos, num_features);
-
-		% calculate beat alignment data.
-		% Yes I know this is clumsy. If I implement clustering of tempo and beat
-		% alignment estimates, then this might not be needed any more, since we can
-		% just pass in the value.
-		all_tempos = idx_for_tempo.keys;
-		for i = 1:num_tempos
-			ith_tempo = all_tempos{i};
-			feature_frame_n = observations(:, n);
-			for n = 1:num_features
-				baf_data(1:ith_tempo, idx_for_tempo(ith_tempo), n) = ...
-					beat_alignment_function_3impulse(feature_frame_n, ith_tempo);
-			end
-		end
-
-		% initialise result vector
 		probs = zeros(num_states, 1);
 
+		% calculate autocorrelation function of the current frame for each feature.
+		% autocorrelation function returns a vector of half the frame_length
+		acf_length = frame_length/2;
+		acf_data = zeros(acf_length, num_features);
+
+		for n = 1:num_features
+			feature_frame_n = observations(:, n);
+			acf = autocorrelation(feature_frame_n);
+			acf_data(:, n) = acf;
+		end
+
+		% calculate the beat alignment data for each unique tempo among the states
+
+		max_tempo_lag = frame_length/2 - 1;
+		baf_data = zeros(max_tempo_lag + 1, max_tempo_lag + 1, num_features);
+		baf_calculated = zeros(max_tempo_lag + 1, 1);
+
 		for state_idx = 1:num_states
-			curr_state = states{state_idx};
-			curr_tempo = curr_state.tempo_samples;
-			% to index into ACF
-			acf_tempo_idx = curr_tempo + 1;
-			% to index into BAF column
-			baf_tempo_idx = idx_for_tempo(curr_state.tempo_samples);
-			% correct for 1-indexing, and that beat alignment is negative
-			beat_align_idx = -1*curr_state.beat_alignment + 1;
+			state = states{state_idx};
+			tempo = state.tempo_samples;
+			% convert to 1-indexing
+			tempo_idx = tempo + 1;
+			if ~baf_calculated(tempo_idx)
+				for n = 1:num_features
+					feature_frame_n = observations(:, n);
+					baf = beat_alignment_function(feature_frame_n, tempo);
+					baf_data(1:tempo, tempo_idx, n) = baf;
+
+				end
+				baf_calculated(tempo_idx) = 1;
+			end
+		end
+
+		% now calculate the observation probabilities
+
+		for state_idx = 1:num_states
+			state = states{state_idx};
+			tempo = state.tempo_samples;
+			tempo_idx = tempo + 1;
+			% also correct for beat alignment being negative
+			baf_idx = -1*state.beat_alignment + 1;
 
 			% -> currently we just add up all features equally!
 			observation_prob = 0;
+
 			for n = 1:num_features
 				% this is our model assumption. 'Probability' here really means a
 				% proportional measure; the value may not be normalised.
-				acf_at_tempo = acf_data(acf_tempo_idx, n);
+				acf_height = acf_data(tempo_idx, n);
 
 				% ideas
-% 				acf_at_double_tempo = 0.5*acf_data(floor(curr_tempo/2) + 1, n) + ...
-% 					0.5*acf_data(ceil(curr_tempo/2) + 1, n);
+% 				acf_at_double_tempo = 0.5*acf_data(floor(tempo/2) + 1, n) + ...
+% 					0.5*acf_data(ceil(tempo/2) + 1, n);
 % 				% if the tempo is fast enough to have half of its value in the
 % 				% acf, increase it by this much
-% 				if 2*curr_tempo <= frame_length/2
-% 					acf_at_half_tempo = acf_data(2*curr_tempo + 1, n);
+% 				if 2*tempo <= frame_length/2
+% 					acf_at_half_tempo = acf_data(2*tempo + 1, n);
 % 				else
 % 					acf_at_half_tempo = 1;
 % 				end
 
-				baf_at_tempo_and_alignment = baf_data(beat_align_idx, baf_tempo_idx, n);
+				baf_height = baf_data(baf_idx, tempo_idx, n);
 
-				observation_prob_for_feature = acf_at_tempo*baf_at_tempo_and_alignment;
+				observation_prob_for_feature = acf_height*baf_height;
 				% + baf at half_tempo_and_alignment?
 				% (if generated by that state)
 
-				if 2*curr_tempo + 1 < frame_length/2;
-					baf_at_half_tempo = beat_alignment_function(feature_frame_n, ...
-					curr_tempo*2);
+				if 2*tempo + 1 < frame_length/2;
+					baf_height_half_tempo = beat_alignment_function(...
+						feature_frame_n, tempo*2);
 				end
-
 
 				% times feature_weight(n)?
 
@@ -290,6 +267,18 @@ methods (Static)
 
 		state = most_likely_state;
 		prob = highest_state_probability;
+	end
+
+	% how to project the beat alignment of a past state into an equivalent beat
+	% alignment several frames later, with beats occuring at the given tempo.
+	% Everything is measured in samples.
+	function projected_alignment = project_beat_alignment(old_alignment, tempo, ...
+			frame_hops, hop_size)
+		if frame_hops < 0
+			error('number of frame hops has to be positive');
+		end
+
+		projected_alignment = mod(old_alignment - frame_hops*hop_size, -tempo);
 	end
 
 end % methods (Static)

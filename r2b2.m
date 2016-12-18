@@ -32,8 +32,8 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	min_bpm = 20;
 	max_bpm = 240;
 
-	max_tempo_peaks = 6;
-	max_alignment_peaks = 3;
+	max_tempo_peaks = 8;
+	max_alignment_peaks = 4;
 
 	feature_win_time = 6; %seconds
 	feature_win_overlap_proportion = 0.875;
@@ -56,8 +56,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	%
 
 	feature1 = odf_klapuri;
-	feature1.initialise(audio_data, audio_sample_rate, ...
-		'klapuris_feature');
+	feature1.initialise(audio_data, audio_sample_rate, 'klapuris_feature');
 	feature1.compute_feature;
 
 	num_features = feature1.num_feature_channels;
