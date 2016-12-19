@@ -17,7 +17,7 @@
 % 	clusters can be to each other
 
 
-function [cluster_means, cluster_metadata] = mean_shift_cluster2(data, min_separation)
+function [cluster_means, cluster_metadata] = mean_shift_cluster(data, min_separation)
 	if ~isequal(size(data, 2), 2)
 		error('data is of incorrect size');
 	end
@@ -32,7 +32,7 @@ function [cluster_means, cluster_metadata] = mean_shift_cluster2(data, min_separ
 
 	if n == 1
 		cluster_means = data(1, 1);
-		cluster_metadata = data(1, 2);
+		cluster_metadata = {data(1, 2)};
 		return
 	end
 
@@ -103,16 +103,14 @@ function [cluster_means, cluster_metadata] = mean_shift_cluster2(data, min_separ
 				current_cluster_size = current_cluster_size + 1;
 				current_cluster_metadata(current_cluster_size) = ...
 					original_sorted_data(j, 2);
+				% update start index of next outer loop
+				i = i + 1;
 			else
 				% we're out of the cluster (since cluster_data is sorted)
-				i = j - 1;
 				break
 			end
 		end
-		% here, j is equal to the index of the last successfully processed index of
-		% the cluster_data array. Now move to the next cluster
-		i = i + 1;
-
+		
 		% Trim metadata list to size
 		current_cluster_metadata = current_cluster_metadata(1:current_cluster_size);
 
@@ -129,5 +127,5 @@ function [cluster_means, cluster_metadata] = mean_shift_cluster2(data, min_separ
 end
 
 function d = distance(x, y)
-	d = sqrt(sum(abs(x - y)).^2);
+	d = sqrt(sum((x - y).^2));
 end

@@ -21,8 +21,8 @@ methods
 
 	% comes up with a set of tempo/beat alignment estimates and confidences for each
 	% input feature, in the given feature frame.
-	% Rows of the feature frame represent feature samples calculated over time, while
-	% columns represent different features.
+	% Rows of the feature frame represent feature samples calculated over time,
+	% while columns represent different features.
 	function frame_estimates = pick_tempo_and_alignment_estimates(this, frame_number)
 		if ~(frame_number >= 1)
 			error('frame number must be positive');
@@ -44,8 +44,8 @@ methods
 
 		num_features = size(feature_frame, 2);
 
-		% holds lists of tempo/beat alignment estimates for each feature, in this frame
-		% the maximum length of each list is max_estimates
+		% holds lists of tempo/beat alignment estimates for each feature. in this
+		% frame the maximum length of each list is max_estimates
 		max_estimates_per_feature = ...
 			this.params.max_tempo_peaks*this.params.max_alignment_peaks;
 
@@ -57,7 +57,7 @@ methods
 		% function).
 
 		for n = 1:num_features
-			% holds all tempo/beat alignment estimate tuples for this feature and frame
+			% holds tempo/beat alignment estimate tuples for this feature and frame
 			feature_n_estimate_tuples = zeros(max_estimates_per_feature, 4);
 			estimate_number = 0;
 

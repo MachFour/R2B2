@@ -20,7 +20,7 @@ properties
 	% state of the frame is equal to the corresponding entry in the current_states
 	% vector, given the 'observations' made of the music so far.
 	current_states;
-	current_probabilities;
+	current_probs;
 	current_tempos;
 
 	winning_states;
@@ -56,7 +56,7 @@ methods
 	function initialise(this)
 		initial_states = this.generate_initial_states;
 		this.current_states = initial_states;
-		this.current_probabilities = viterbi_helper.initial_forward_message(initial_states);
+		this.current_probs = viterbi_helper.initial_forward_message(initial_states);
 
 		% allocate some space for winning estimates and probabilities;
 		this.winning_states = cell(50, 1);
@@ -114,7 +114,7 @@ methods
 	%	is a cell matrix containing a set of tempo and alignment estimates (no
 	% 	confidences) for the current frame. There is one set for each feature,
 	%	which means the cell matrix is 1 row (since it's only one frame's worth of
-	%	data) by n columns, where n is the number of features. The tempo and alignment
+	%	data) by n columns, where n is the number of features. The tempo / alignment
 	%	estimates should be in SAMPLES. These estimates will be used to generate the
 	%	states that are searched for this frame
 
@@ -157,19 +157,23 @@ methods
 		%	new_states{num_new_states} = initial_states{state_idx};
 		%end
 
-		% add all of the estimates
-		for n = 1:size(tempo_alignment_estimates, 2)
-			feature_n_estimates = tempo_alignment_estimates{n};
-			for estimate_idx = 1:size(feature_n_estimates, 1)
-				curr_tp_estimate = feature_n_estimates(estimate_idx, :);
-				tempo_estimate = curr_tp_estimate(1);
-				alignment_estimate = curr_tp_estimate(3);
+		% perform clustering on estimates. For now, estimates within 5 samples
+		% are treated as the same. This will make things more inaccurate at
+		% higher tempos.
+		clustered_estimates = cluster_estimates(tempo_alignment_estimates, ...
+			this.params.max_tempo_peaks, this.params.max_alignment_peaks, ...
+			5, 5);
 
-				num_new_states = num_new_states + 1;
-				new_states{num_new_states} = ...
-					this.create_state(tempo_estimate, alignment_estimate);
-				% add tempo harmonics as estimates?
-			end
+
+		% add all of the clustered estimates
+		for estimate_idx = 1:size(clustered_estimates, 1)
+			curr_ta_estimate = clustered_estimates(estimate_idx, :);
+			tempo = curr_ta_estimate(1);
+			alignment = curr_ta_estimate(3);
+
+			num_new_states = num_new_states + 1;
+			new_states{num_new_states} = this.create_state(tempo, alignment);
+			% add tempo harmonics as estimates?
 		end
 
 		% Trim cell array down to size
@@ -182,7 +186,7 @@ methods
 		end
 
 		past_states = this.current_states;
-		past_probabilities = this.current_probabilities;
+		past_probs = this.current_probs;
 
 		% in exceptional circumstances...
 		if isempty(new_states)
@@ -191,11 +195,11 @@ methods
 		end
 
 		new_probs = viterbi_helper.update_forward_message(past_states, ...
-			past_probabilities, new_states, feature_data);
+			past_probs, new_states, feature_data);
 
 		% overwrite past information now we don't need them any more
 		this.current_states = new_states;
-		this.current_probabilities = new_probs;
+		this.current_probs = new_probs;
 
 		% Now find argmax of the probabilities
 		% what if there's no most likely state?
@@ -203,7 +207,7 @@ methods
 		this.winning_states{this.frame_number} = winning_state;
 		this.winning_probabilities(this.frame_number) = winning_prob;
 
-		% plot(this.current_probabilities);
+		% plot(this.current_probs);
 
 	end
 
