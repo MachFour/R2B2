@@ -35,7 +35,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	max_tempo_peaks = 8;
 	max_alignment_peaks = 4;
 
-	feature_win_time = 6; %seconds
+	feature_win_time = 4; %seconds
 	feature_win_overlap_proportion = 0.875;
 	% or maybe use a window that weights recent samples more than older (by a
 	% few seconds) samples
@@ -50,6 +50,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 
 	disp('algorithm parameters');
 	disp(params);
+	fprintf('\n');
 
 	%
 	% FEATURE CALCULATION
