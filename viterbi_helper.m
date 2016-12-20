@@ -93,7 +93,7 @@ methods (Static)
 	% tempos = cell(num_new_states, 1)
 	% 	is a vector of states that will be part of the new forward message.
 	% 	the new message
-	function new_probs = update_forward_message(past_states, past_probabilities, ...
+	function new_probs = update_forward_message(past_states, past_probs, ...
 			new_states, new_observations)
 		% new_forward_message(X_t)
 		% = Prob(X_t | e_{1...t})
@@ -105,13 +105,13 @@ methods (Static)
 		% calculate P(current_observations | X_t) for each X_t that we are
 		% considering. Note that these are proportional: the probability over all
 		% possible observations given some X_t may not sum to 1.
-		observation_probs = viterbi_helper.compute_observation_probs(new_observations, ...
-			new_states);
+		observation_probs = ...
+			viterbi_helper.compute_observation_probs(new_observations, new_states);
 
 		% Calculate, for each new state X_t,
 		% (sum over all states x_t-1) P(X_t | x_t-1)*current_forward_message(x_t-1)
-		transition_probs = viterbi_helper.compute_transition_probs(past_states, ...
-			past_probabilities, new_states);
+		transition_probs = ...
+			viterbi_helper.compute_transition_probs(past_states, past_probs, new_states);
 
 		% now multiply them and make it sum to 1
 		new_probs = observation_probs.*transition_probs;
@@ -251,13 +251,6 @@ methods (Static)
 				% this is our model assumption. 'Probability' here really means a
 				% proportional measure; the value may not be normalised.
 				acf_height = acf_data(tempo_idx, n);
-
-				% ideas
-% 				acf_at_double_tempo = 0.5*acf_data(floor(tempo/2) + 1, n) + ...
-% 					0.5*acf_data(ceil(tempo/2) + 1, n);
-% 				% if the tempo is fast enough to have half of its value in the
-% 				% acf, increase it by this much
-
 				baf_height = baf_data(baf_idx, tempo_idx, n);
 
 				curr_feature_observation_prob = acf_height*baf_height;
@@ -280,11 +273,8 @@ methods (Static)
 						+ acf_height_double*baf_height_double;
 				end
 
-
-
-				% times feature_weight(n)?
-
 				observation_prob = observation_prob + curr_feature_observation_prob;
+				% times feature_weight(n)?
 			end
 
 			probs(state_idx) = observation_prob;
