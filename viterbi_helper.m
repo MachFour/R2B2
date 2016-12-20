@@ -9,36 +9,47 @@ classdef viterbi_helper < handle
 methods (Static)
 	% plots a cell array of states, showing for each one, the observed beat location,
 	% and the next predicted beat time given the state's tempo
-	function plot_states(states)
+	function plot_states(states, frame_number, params)
 		num_states = length(states);
 		if num_states == 0
 			return
 		end
 
-		frame_end_time = states{1}.frame_end_time;
-		next_frame_end_time = frame_end_time + states{1}.params.feature_hop_size/...
-			states{1}.params.feature_sample_rate;
-		prev_frame_end_time = frame_end_time + (frame_end_time - next_frame_end_time);
+
+		curr_frame_start_time = params.feature_frame_start_time(frame_number);
+		curr_frame_end_time = params.feature_frame_end_time(frame_number);
+		next_frame_end_time = params.feature_frame_end_time(frame_number + 1);
+		prev_frame_end_time = params.feature_frame_end_time(frame_number - 1);
+
+		if frame_number == 1
+			prev_frame_end_time = 0;
+		end
 
 		figure;
 		hold on;
 		% show line at end time of frame
-		stem(frame_end_time, num_states, 'gx');
+		stem(curr_frame_start_time, num_states, 'gx');
+		stem(curr_frame_end_time, num_states, 'gx');
 		stem(next_frame_end_time, num_states, 'rx');
 		stem(prev_frame_end_time, num_states, 'rx');
-		% do this so that the points with the same index come out in the right colour
+
 		for state_idx = 1:length(states)
 			state = states{state_idx};
+			tempo_period = state.tempo_period;
+			beat_location = state.beat_location;
 
-			predicted_locs = state.beat_location:state.tempo_period:next_frame_end_time;
-			scatter(predicted_locs, state_idx*ones(size(predicted_locs)), 'kx');
+			predicted_locs = beat_location:tempo_period:next_frame_end_time;
+			scatter(predicted_locs, state_idx*ones(size(predicted_locs)), 'ko');
 
-			observed_locs = state.beat_location:-state.tempo_period:prev_frame_end_time;
-			scatter(observed_locs, state_idx*ones(size(observed_locs)), 'ko');
-			% add a line to join the dots
-			plot([min(observed_locs), max(predicted_locs)], state_idx*[1, 1], 'b');
+			observed_locs = beat_location:-tempo_period:curr_frame_start_time;
+			scatter(observed_locs, state_idx*ones(size(observed_locs)), 'kx');
+			% add a line to join the dots. Dotted between observed, solid
+			% between predicted
+			plot([min(observed_locs), max(observed_locs)], state_idx*[1, 1], 'b.');
+			plot([min(predicted_locs), max(predicted_locs)], state_idx*[1, 1], 'b');
 		end
-		xlabel(sprintf('Plot of states for frame ending at %.1f s', frame_end_time));
+
+		xlabel(sprintf('States for frame ending at %.1f s', curr_frame_end_time));
 		xlabel('Time (s)');
 		ylabel('State index');
 	end
@@ -184,7 +195,7 @@ methods (Static)
 			tempo_idx = tempo + 1;
 			half_tempo_idx = half_tempo + 1;
 			double_tempo_idx = double_tempo + 1;
-			
+
 			if ~baf_calculated(tempo_idx)
 				for n = 1:num_features
 					feature_frame_n = observations(:, n);
@@ -223,7 +234,7 @@ methods (Static)
 			half_tempo = 2*tempo;
 			% round up or down?
 			double_tempo = round(tempo/2);
-			
+
 			% correct for 1-indexing
 			tempo_idx = tempo + 1;
 			half_tempo_idx = half_tempo + 1;
@@ -257,18 +268,18 @@ methods (Static)
 				if half_tempo_idx < frame_length/2;
 					acf_height_half = acf_data(half_tempo_idx, n);
 					baf_height_half = baf_data(baf_idx, half_tempo_idx, n);
-					
+
 					curr_feature_observation_prob = curr_feature_observation_prob ...
 						+ acf_height_half*baf_height_half;
-					
+
 					% do this only if meter variable == 'simple'
 					acf_height_double = acf_data(double_tempo_idx, n);
 					baf_height_double = baf_data(double_baf_idx, double_tempo_idx, n);
-				
+
 					curr_feature_observation_prob = curr_feature_observation_prob ...
 						+ acf_height_double*baf_height_double;
 				end
-				
+
 
 
 				% times feature_weight(n)?
