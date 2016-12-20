@@ -36,7 +36,7 @@ function r2b2(audio_filename, audio_directory, data_output_directory)
 	max_alignment_peaks = 4;
 
 	feature_win_time = 4; %seconds
-	feature_win_overlap_proportion = 0.875;
+	feature_win_overlap_proportion = 0.75;
 	% or maybe use a window that weights recent samples more than older (by a
 	% few seconds) samples
 	feature_win_type = 'rect';
