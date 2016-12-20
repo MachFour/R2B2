@@ -119,23 +119,6 @@ methods
 		% min_bpm that reflect bar-length periodicities. It would be nice to
 		% integrate these somehow into the algorithm.
 
-		% HEURISTIC: use peaks at half the given tempo to support the
-		% given tempo. Do this by averaging the acf with a compressed
-		% version
-		%doubled_acf = acf;
-
-		%for i = 1:length(acf)/2;
-		%	doubled_acf(i) = acf(i)/2 + (acf(2*i - 1) + acf(2*i))/4;
-		%end
-
-		% could be useful for compound time music?
-		%tripled_acf = acf;
-
-		%for i = 1:length(acf)/3;
-		%	tripled_acf(i) = acf(i)/2 + ...
-		%		(acf(3*i-2) + acf(3*i-1) + acf(3*i))/6;
-		%end
-
 		% MinPeakProminence: necessary vertical descent on both sides
 		% in order to count as a peak
 		% since all values are less than 1, we make this 0.025
@@ -188,56 +171,6 @@ methods
 	 	% are calculated backwards from the end of the current feature frame
 		alignments = -1*alignments;
 
-	end
-
-
-	% Narrows down the search of possible tempos to only a small
-	% subset identified by the tempo/alignment estimator as likely.
-	% Different features will have picked different peaks for their autocorrelation
-	% functions, but if the different estimates are close enough, we treat them as
-	% both estimating the same tempo.  The idea is that if a lot of different
-	% features agree on the tempo, then it's more likely to be that tempo.
-
-	% PARAMETERS:
-	% tempo_estimates = cell(1, this.num_features)
-	%	  is a cell matrix containing a set of tempo estimates (no confidences)
-	%	  for the current frame. There is one set for each feature, which means the cell
-	%	  matrix is 1 row (since it's only one frame's worth of data) by n columns, where
-	%	  n is the number of features. The tempo estimates should be in SAMPLES.
-	function clustered_tempos = cluster_tempo_estimates(this, tempo_estimates)
-
-		% stores the set of tempos to search over in this iteration of the
-		% Viterbi algorithm
-		% each tempo is tagged with the number of the feature that it comes
-		% from.
-		candidate_tempos = zeros(this.num_features*this.params.max_tempo_peaks, 2);
-		num_candidate_tempos = 0;
-
-		for feature_idx = 1:this.num_features
-			tempo_estimates_list = tempo_estimates{feature_idx};
-			for estimate_idx = 1:length(tempo_estimates_list)
-				num_candidate_tempos = num_candidate_tempos + 1;
-
-				tempo_estimate = tempo_estimates_list(estimate_idx);
-				candidate_tempos(num_candidate_tempos, 1) = tempo_estimate;
-				candidate_tempos(num_candidate_tempos, 2) = feature_idx;
-			end
-		end
-		% trim list to its actual length
-		candidate_tempos = candidate_tempos(1:num_candidate_tempos, :);
-
-		% now group together similar tempo estimates;
-		% use mean shift clustering *BY BPM*.
-		% 2BPM seems like a reasonable
-		% cluster width
-
-		sample_to_bpm_factor = this.params.feature_sample_rate*60;
-
-		bpm_distance = @(x, y) sqrt(sum(sample_to_bpm_factor.*(1./x - 1./y)).^2);
-		cluster_width = 4; % BPM
-		clustered_tempos = mean_shift_cluster(candidate_tempos, ...
-			bpm_distance, cluster_width);
-		% what to do if there are no tempos?
 	end
 
 	% for each sample frame, plot the detection function,
