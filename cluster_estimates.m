@@ -37,43 +37,59 @@ function clustered_estimates = cluster_estimates(tempo_alignment_estimates, ...
 	% add all tempo/alignment estimate pairs to a single list,
 	% discard confidence and which feature had which estimate
 
-	max_estimates = num_features*max_tempo_peaks*max_alignment_peaks;
-	estimate_pairs = zeros(max_estimates, 2);
-	num_estimates = 0;
+	% each tempo estimate has its alignment attached
+	estimate_pairs = zeros(num_features*max_tempo_peaks*max_alignment_peaks, 2);
+	% just tempos only, discarding alignment data
+	estimate_tempos = zeros(num_features*max_tempo_peaks, 2);
+	num_estimate_pairs = 0;
+	num_estimate_tempos = 0;
 
 	for n = 1:num_features
 		feature_estimates = tempo_alignment_estimates{n};
+		last_estimated_tempo = 0;
+
 		for estimate_idx = 1:size(feature_estimates, 1);
-			tempo_estimate = feature_estimates(estimate_idx, 1);
-			beat_alignment_estimate = feature_estimates(estimate_idx, 3);
+			tempo = feature_estimates(estimate_idx, 1);
+			beat_alignment = feature_estimates(estimate_idx, 3);
 
-			num_estimates = num_estimates + 1;
-			estimate_pairs(num_estimates, :) = ...
-				[tempo_estimate, beat_alignment_estimate];
+			num_estimate_pairs = num_estimate_pairs + 1;
+			estimate_pairs(num_estimate_pairs, :) = [tempo, beat_alignment];
 
+			if tempo ~= last_estimated_tempo
+				num_estimate_tempos = num_estimate_tempos + 1;
+				% could use the tempo confidence as the metadata here?
+				estimate_tempos(num_estimate_tempos, :) = [tempo, n];
+				last_estimated_tempo = tempo;
 		end
 	end
 
-	estimate_pairs = estimate_pairs(1:num_estimates, :);
+	estimate_pairs = estimate_pairs(1:num_estimate_pairs, :);
+	estimate_tempos = estimate_tempos(1:num_estimate_tempos, :);
 
-	[clustered_tempos, alignments_for_tempo] = ...
+
+	% tempo clusters will be pretty much the same, the only difference will be a
+	% slight change in the means due to having multiple identical tempos with
+	% different beat alignment, but it should not cause a huge problem, since the
+	% number of beat alignment peaks is limited.
+	[clustered_tempos, voting_features] = ...
+		mean_shift_cluster(estimate_tempos, tempo_sep);
+	[~, alignments_for_tempo] = ...
 		mean_shift_cluster(estimate_pairs, tempo_sep);
 
 	% alignments_for_tempo is a cell array containing all alignments estimated for
 	% the given tempo. Now cluster these, and put into clustered_ta_estimates.
 
-	clustered_estimates = zeros(max_estimates, 4);
+	clustered_estimates = zeros(num_features*max_tempo_peaks*max_alignment_peaks, 4);
 	num_clustered_estimates = 0;
 
 
 	num_tempo_clusters = length(clustered_tempos);
 	for tempo_idx = 1:num_tempo_clusters
 		alignments = alignments_for_tempo{tempo_idx};
-		% number of features that chose this tempo is approximately
-		% round(length(alignments)/params.max_alignment_peaks).
+		num_voting_features = length(voting_features{tempo_idx});
 
 		tempo_cluster_mean = clustered_tempos(tempo_idx);
-		tempo_cluster_confidence = round(length(alignments)/max_alignment_peaks);
+		tempo_cluster_confidence = num_voting_features;
 
 
 		% give the alignments themselves as the metadata, so we can keep track of
@@ -86,19 +102,22 @@ function clustered_estimates = cluster_estimates(tempo_alignment_estimates, ...
 			alignment_cluster_mean = clustered_alignments(align_idx);
 			alignment_cluster_confidence = length(alignments_in_cluster{align_idx});
 
-			num_clustered_estimates = num_clustered_estimates + 1;
-			clustered_estimates(num_clustered_estimates, :) = [
-				tempo_cluster_mean, ...
-				tempo_cluster_confidence, ...
-				alignment_cluster_mean, ...
-				alignment_cluster_confidence
-				];
+			% only include estimate if several features voted for it.
+			% round tempo and alignment estimates to nearest sample values.
+			if tempo_cluster_confidence > 1 && alignment_cluster_confidence > 1
+				num_clustered_estimates = num_clustered_estimates + 1;
+				clustered_estimates(num_clustered_estimates, :) = [
+					round(tempo_cluster_mean), ...
+					tempo_cluster_confidence, ...
+					round(alignment_cluster_mean), ...
+					alignment_cluster_confidence
+					];
+			end
 		end
 	end
-	
-	% trim and do rounding to nearest sample
 
-	clustered_estimates = round(clustered_estimates(1:num_clustered_estimates, :));
+	% trim to length
+	clustered_estimates = clustered_estimates(1:num_clustered_estimates, :);
 
 end
 
