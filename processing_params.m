@@ -138,7 +138,7 @@ methods
 			max_tempo_peaks = 8;
 			max_alignment_peaks = 4;
 
-			feature_win_time = 3; %seconds
+			feature_win_time = 5; %seconds
 			feature_win_overlap_proportion = 0.75;
 			% or maybe use a window that weights recent samples more than older (by a
 			% few seconds) samples
@@ -152,7 +152,12 @@ methods
 		audio_hop_size = round(audio_win_length*(1 - audio_win_overlap_proportion));
 
 		feature_sample_rate = audio_sample_rate*feature_upsample_factor/audio_hop_size;
-		feature_win_length = 2^round(log2(feature_sample_rate*feature_win_time));
+		% make feature win length a multiple of 256
+		feature_win_length = 256*round(feature_sample_rate*feature_win_time/256);
+		% if it would be less than 256, just make it a power of 2.
+		if feature_win_length == 0
+			feature_win_length = 2^round(log2(feature_sample_rate*feature_win_time));
+		end
 		feature_hop_size = round(feature_win_length*(1-feature_win_overlap_proportion));
 
 		% rounding of supplied approximate values
